@@ -61,8 +61,10 @@ for(i in 1:chunks)
 	var_guu <- runif(1, 0.05, 0.3)
 
 	# Horizontal pleiotropy
-	var_g1y <- min(rbeta(1, 1, 100), 0.2)
-	var_g2x <- min(rbeta(1, 1, 100), 0.2)
+	# var_g1y <- min(rbeta(1, 1, 100), 0.2)
+	var_g1y <- 0
+	# var_g2x <- min(rbeta(1, 1, 100), 0.2)
+	var_g2x <- 0
 	# mu_g1y <- min(rbeta(1, 1, 200), 0.05) * sample(c(1,-1), 1)
 	# mu_g2x <- min(rbeta(1, 1, 300), 0.05) * sample(c(1,-1), 1)
 	mu_g1y <- 0

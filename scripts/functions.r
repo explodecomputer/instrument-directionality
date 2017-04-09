@@ -1,62 +1,122 @@
 library(TwoSampleMR)
 library(dplyr)
 
-find_invalid_instruments <- function(d1, d2, d3, steiger_thresh=0.05)
+
+pairwise_directionality <- function(d1, d2, steiger_thresh=0.05)
 {
 	d1$pval[d1$pval==0] <- 1e-200
 	d2$pval[d2$pval==0] <- 1e-200
-	d3$pval[d3$pval==0] <- 1e-200
-
-	index <- d1$pval < 5e-8
 
 	l0 <- list()
 	for(i in 1:nrow(d1))
 	{
 		l0[[i]] <- mr_steiger(
-			d2$pval[i], 
 			d1$pval[i], 
-			d2$n[i], 
-			d1$n[i]
-		)
-	}
-	l1 <- list()
-	for(i in 1:nrow(d1))
-	{
-		l1[[i]] <- mr_steiger(
-			d3$pval[i],
-			d1$pval[i],
-			d3$n[i],
-			d1$n[i]
-		)
-	}
-	l2 <- list()
-	for(i in 1:nrow(d1))
-	{
-		l2[[i]] <- mr_steiger(
-			d3$pval[i],
-			d2$pval[i],
-			d3$n[i],
+			d2$pval[i], 
+			d1$n[i], 
 			d2$n[i]
 		)
 	}
 
+	dat12 <- recode_dat(data.frame(
+		exposure="X",
+		id.exposure="X",
+		outcome="Y",
+		id.outcome="Y",
+		beta.exposure=d1$bhat,
+		beta.outcome=d2$bhat,
+		se.exposure=d1$se,
+		se.outcome=d2$se,
+		pval.exposure=d1$pval,
+		pval.outcome=d2$pval,
+		samplesize.exposure=d1$n,
+		samplesize.outcome=d2$n,
+		mr_keep=TRUE
+	))
+
+	dat21 <- recode_dat(data.frame(
+		exposure="X",
+		id.exposure="X",
+		outcome="Y",
+		id.outcome="Y",
+		beta.exposure=d2$bhat,
+		beta.outcome=d1$bhat,
+		se.exposure=d2$se,
+		se.outcome=d1$se,
+		pval.exposure=d2$pval,
+		pval.outcome=d1$pval,
+		samplesize.exposure=d2$n,
+		samplesize.outcome=d1$n,
+		mr_keep=TRUE
+	))
+
+
+	d <- data.frame(
+		inst = d1$inst,
+		sig1 = d1$pval < 5e-8,
+		sig2 = d2$pval < 5e-8,
+		dir12 = sapply(l0, function(x) x$correct_causal_direction),
+		dir12_p = sapply(l0, function(x) x$steiger_test)
+	)
+
+	i12 <- d$sig1 & d$dir12 & d$dir12_p < steiger_thresh
+	i21 <- d$sig2 & !d$dir12 & d$dir12_p < steiger_thresh
+
+	res12 <- mr(dat12[i12,], meth="mr_ivw")$pval
+	res21 <- mr(dat21[i21,], meth="mr_ivw")$pval
+
+	return(list(d=d, res=c(res12, res21)))
+}
+
+
+find_invalid_instruments <- function(d1, d2, du, steiger_thresh=0.05)
+{
+	d1$pval[d1$pval==0] <- 1e-200
+	d2$pval[d2$pval==0] <- 1e-200
+	du$pval[du$pval==0] <- 1e-200
+
+	index <- d1$pval < 5e-8
+
+	# 1. test directionality of each instrument between x and y
+	# 2. test directionality of each instrument between x and u
+	# 3. using directionality test causality of u on x and x on u
+	# 4. if u on x then test directionality of each instrument between u and y
+	# 5. test causality of u on y and y on u
+	# 6. if u on y and u on x then remove confounding instruments
+
+	xy <- pairwise_directionality(d1, d2, steiger_thresh)
+	ux <- pairwise_directionality(du, d1, steiger_thresh)
+	uy <- pairwise_directionality(du, d2, steiger_thresh)
+
 	d <- data.frame(
 		inst = d1$inst,
 		sig_inst = d1$pval < 5e-8,
-		xy = sapply(l0, function(x) x$correct_causal_direction),
-		xy_p = sapply(l0, function(x) x$steiger_test),
-		ux = sapply(l1, function(x) x$correct_causal_direction),
-		ux_p = sapply(l1, function(x) x$steiger_test),
-		uy = sapply(l2, function(x) x$correct_causal_direction),
-		uy_p = sapply(l2, function(x) x$steiger_test)
+		xy = xy$d$dir12,
+		xy_p = xy$d$dir12_p,
+		ux = ux$d$dir12,
+		ux_p = ux$d$dir12_p,
+		uy = uy$d$dir12,
+		uy_p = uy$d$dir12_p,
+		ux_sig = ux$res[1] < steiger_thresh,
+		uy_sig = uy$res[1] < steiger_thresh
 	)
 
-	d$remove_reverse <- with(d, xy & xy_p < steiger_thresh)
-	d$remove_confounder <- with(d, ux & uy * ux_p < steiger_thresh & uy_p < steiger_thresh)
+	d$remove_reverse <- 
+		d$xy & 
+		d$xy_p < steiger_thresh
+
+	d$remove_confounder <- 
+		d$ux & 
+		d$uy &
+		d$ux_p < steiger_thresh & 
+		d$uy_p < steiger_thresh &
+		ux$res[1] < steiger_thresh &
+		uy$res[1] < steiger_thresh
 	d$keep <- d$sig_inst & !d$remove_reverse & !d$remove_confounder
 
 	return(d)
 }
+
 
 get_summary_stats <- function(pop1, pop2, popu)
 {
@@ -103,6 +163,7 @@ get_summary_stats <- function(pop1, pop2, popu)
 
 	return(list(dat_xy=dat_xy, dat_yx=dat_yx, gw=gw))
 }
+
 
 run_sim <- function(nid1, nid2, nidu, ninst1, ninst2, ninstu, var_xy, var_ux, var_uy, var_g1x, var_g2y, var_guu, var_g1y, var_g2x, mu_g1y, mu_g2x, mr_method)
 {
@@ -171,7 +232,9 @@ run_sim <- function(nid1, nid2, nidu, ninst1, ninst2, ninstu, var_xy, var_ux, va
 	txy$dir <- "xy"
 	tyx$dir <- "yx"
 	selection <- rbind(txy, tyx)
+	selection$conf_xy <- xy$xu_sig[1] & xy$yu_sig[1]
+	selection$conf_yx <- yx$xu_sig[1] & yx$yu_sig[1]
 
-	return(list(selection=selection, res=res, param=param))
+	return(list(selection=selection, res=res, param=param, ss=ss, xy=xy, yx=yx))
 }
 
