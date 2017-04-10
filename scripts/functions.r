@@ -102,7 +102,7 @@ find_invalid_instruments <- function(d1, d2, du, steiger_thresh=0.05)
 	)
 
 	d$remove_reverse <- 
-		d$xy & 
+		!d$xy & 
 		d$xy_p < steiger_thresh
 
 	d$remove_confounder <- 
@@ -232,8 +232,8 @@ run_sim <- function(nid1, nid2, nidu, ninst1, ninst2, ninstu, var_xy, var_ux, va
 	txy$dir <- "xy"
 	tyx$dir <- "yx"
 	selection <- rbind(txy, tyx)
-	selection$conf_xy <- xy$xu_sig[1] & xy$yu_sig[1]
-	selection$conf_yx <- yx$xu_sig[1] & yx$yu_sig[1]
+	selection$conf_xy <- xy$ux_sig[1] & xy$uy_sig[1]
+	selection$conf_yx <- yx$ux_sig[1] & yx$uy_sig[1]
 
 	return(list(selection=selection, res=res, param=param, ss=ss, xy=xy, yx=yx))
 }

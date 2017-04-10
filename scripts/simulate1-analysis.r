@@ -91,8 +91,8 @@ hist(ryx_p)
 
 
 
-g1 -> x <- u <- g1
-g1 -> y <- u <- g1
+g1 -> x <- u <- g2
+g1 -> y <- u <- g2
 
 
 
