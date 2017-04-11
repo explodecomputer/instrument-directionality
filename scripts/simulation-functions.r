@@ -196,3 +196,25 @@ analyse_simulation <- function(dat, pop2)
 	res <- rbind(ivres, scoreres)
 	return(res)
 }
+
+make_datg <- function(gwasx, gwasy)
+{
+	dat <- data.frame(
+		exposure="X",
+		id.exposure="X",
+		outcome="Y",
+		id.outcome="Y",
+		beta.exposure=gwasx$bhat,
+		beta.outcome=gwasy$bhat,
+		se.exposure=gwasx$se,
+		se.outcome=gwasy$se,
+		pval.exposure=gwasx$pval,
+		pval.outcome=gwasy$pval,
+		samplesize.exposure=gwasx$n,
+		samplesize.outcome=gwasy$n,
+		mr_keep=TRUE,
+		inst=gwasx$inst
+	)
+	return(dat)
+
+}
