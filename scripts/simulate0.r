@@ -11,7 +11,7 @@ param <- expand.grid(
 	var_g1y = c(0, 0.025, 0.1),
 	mu_g1y = c(-0.1, 0, 0.1)
 )
-
+param$sim <- 1:nrow(param)
 
 arguments <- commandArgs(T)
 jid <- as.numeric(arguments[1])
@@ -41,6 +41,9 @@ for(i in 1:nrow(param))
 	dat <- recode_dat(make_dat(dat1, dat2))
 	res <- run_rucker(dat)
 	res$param <- param[i,]
+	res$mode <- with(dat, mr_mode(beta.exposure, beta.outcome, se.exposure, se.outcome))
+	res$median <- with(dat, mr_median(beta.exposure, beta.outcome, se.exposure, se.outcome))
+	res$dat <- dat
 	l[[i]] <- res
 }
 
