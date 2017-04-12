@@ -6,10 +6,10 @@ param <- expand.grid(
 	nsnp = c(5,20,50),
 	nid1 = 50000,
 	nid2 = 50000,
-	var_xy = c(0, 0.05, 0.1, 0.5),
-	var_g1x = c(0.2),
-	var_g1y = c(0, 0.025, 0.1),
-	mu_g1y = c(-0.1, 0, 0.1)
+	var_xy = c(0, 0, 0, 0, 0, 0.005, 0.01, 0.025, 0.05, 0.1),
+	var_g1x = c(0.001, 0.05, 0.1),
+	var_g1y = c(0, 0.001, 0.025),
+	mu_g1y = c(-0.05, 0, 0.05)
 )
 param$sim <- 1:nrow(param)
 
@@ -39,10 +39,9 @@ for(i in 1:nrow(param))
 	dat1 <- get_effs(pop1$x, pop1$y, pop1$G1)
 	dat2 <- get_effs(pop2$x, pop2$y, pop2$G1)
 	dat <- recode_dat(make_dat(dat1, dat2))
-	res <- run_rucker(dat)
+	res <- mr_all(dat)
+	res$res$sim <- param$sim[i]
 	res$param <- param[i,]
-	res$mode <- with(dat, mr_mode(beta.exposure, beta.outcome, se.exposure, se.outcome))
-	res$median <- with(dat, mr_median(beta.exposure, beta.outcome, se.exposure, se.outcome))
 	res$dat <- dat
 	l[[i]] <- res
 }
