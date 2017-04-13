@@ -1,3 +1,5 @@
+library(dplyr)
+
 makePhen <- function(effs, indep, vy=1, vx=rep(1, length(effs)), my=0)
 {
 	if(is.null(dim(indep))) indep <- cbind(indep)
@@ -218,3 +220,208 @@ make_datg <- function(gwasx, gwasy)
 	return(dat)
 
 }
+
+init_parameters <- function(nid, nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var_gy.y=0, mu_gx.y=0, var_gy.x=0, mu_gy.x=0)
+{
+	parameters <- list(
+		nid = nid,
+
+		# Causal effect
+		var_x.y = var_x.y,
+
+		# Direct effects on x
+		nsnp_x = nsnp_x,
+		var_gx.x = var_gx.x,
+		var_gx.y = var_gx.y,
+		mu_gx.y = mu_gx.y,
+
+		nsnp_y = nsnp_y,
+		var_gy.y = var_gy.y,
+		var_gy.x = var_gy.x,
+		mu_gy.x = mu_gy.x,
+		u = list()
+	)
+	return(parameters)
+}
+
+add_u <- function(parameters, nsnp_u, var_u.x, var_u.y, var_gu.u)
+{
+	i <- length(parameters$u) + 1
+	parameters$u[[i]] <- list(
+		nsnp_u = nsnp_u,
+		var_u.x = var_u.x,
+		var_u.y = var_u.y,
+		var_gu.u = var_gu.u
+	)
+	return(parameters)
+}
+
+generate_system_effects <- function(parameters)
+{
+	nu <- length(parameters$u)
+	if(nu > 0)
+	{
+		for(i in 1:nu)
+		{
+			parameters$u[[i]]$eff_gu.u <- chooseEffects(parameters$u[[i]]$nsnp_u, parameters$u[[i]]$var_gu.u)
+			parameters$u[[i]]$eff_u.x <- chooseEffects(1, parameters$u[[i]]$var_u.x)
+			parameters$u[[i]]$eff_u.y <- chooseEffects(1, parameters$u[[i]]$var_u.y)
+		}
+	}
+
+	parameters$eff_gx.x <- chooseEffects(parameters$nsnp_x, parameters$var_gx.x)
+	parameters$eff_gx.y <- chooseEffects(parameters$nsnp_x, parameters$var_gx.y, mua=parameters$mu_gx.y)
+
+	parameters$eff_gy.x <- chooseEffects(parameters$nsnp_y, parameters$var_gy.x, mua=parameters$mu_gy.x)
+
+	parameters$eff_gy.y <- chooseEffects(parameters$nsnp_y, parameters$var_gy.y)
+
+	parameters$eff_u.x <- sapply(parameters$u, function(x) chooseEffects(1, x$var_u.x))
+
+	parameters$eff_u.y <- sapply(parameters$u, function(x) chooseEffects(1, x$var_u.y))
+	parameters$eff_x.y <- sqrt(parameters$var_x.y)
+
+	return(parameters)
+}
+
+simulate_population <- function(parameters)
+{
+	require(dplyr)
+
+	Gx <- matrix(rbinom(parameters$nsnp_x * parameters$nid, 2, 0.5), parameters$nid, parameters$nsnp_x)
+
+	Gy <- matrix(rbinom(parameters$nsnp_y * parameters$nid, 2, 0.5), parameters$nid, parameters$nsnp_y)
+
+	U <- lapply(parameters$u, function(param)
+	{
+		G <- matrix(rbinom(param$nsnp_u * parameters$nid, 2, 0.5), parameters$nid, param$nsnp_u)
+		u <- makePhen(param$eff_gu.u, G)
+		return(list(p=u, G=G))
+	})
+
+
+	bx <- parameters$eff_gx.x
+	by <- parameters$eff_gx.y
+
+	Gt <- Gx
+	if(parameters$nsnp_y > 0)
+	{
+		bx <- c(bx, parameters$eff_gy.x)
+		by <- c(by, parameters$eff_gy.y)
+		Gt <- cbind(Gt, Gy)
+	}
+
+	if(length(parameters$u) > 0)
+	{
+		bx <- c(bx, sapply(parameters$u, function(x) x$eff_u.x))
+		by <- c(by, sapply(parameters$u, function(x) x$eff_u.y))
+		Gt <- cbind(Gt, do.call(cbind, lapply(U, function(x) x$p)))
+	}
+	by <- c(by, parameters$eff_x.y)
+
+	x <- makePhen(bx, Gt)
+	y <- makePhen(by, cbind(Gt, x))
+
+	return(list(
+		y=y,
+		x=x,
+		Gx=Gx,
+		Gy=Gy,
+		U=U
+	))
+
+}
+
+
+system_effs <- function(sim)
+{
+	# Get effects of all X SNPs
+
+	l <- list()
+
+	gx.x <- gwas(sim$x, sim$Gx)
+	gx.x$inst <- "x"
+	gx.y <- gwas(sim$y, sim$Gx)
+	gx.y$inst <- "x"
+
+	gx <- gx.x
+	gy <- gx.y
+
+	# Get effects of all SNPs on Y
+
+	if(ncol(sim$Gy) > 0)
+	{
+		gy.x <- gwas(sim$x, sim$Gy)
+		gy.x$inst <- "y"
+		gx <- rbind(gx, gy.x)
+
+		gy.y <- gwas(sim$y, sim$Gy)
+		gy.y$inst <- "y"
+		gy <- rbind(gy, gy.y)
+	}
+
+	nconf <- length(sim$U)
+	if(nconf > 0)
+	{
+		gu.x <- list()
+		gu.y <- list()
+		gx.u <- list()
+		gy.u <- list()
+		for(i in 1:nconf)
+		{
+			gu.x[[i]] <- gwas(sim$x, sim$U[[i]]$G)
+			gu.x[[i]]$inst <- paste0("u",i)
+			gx.u[[i]] <- gwas(sim$U[[i]]$p, sim$Gx)
+			gx.u[[i]]$inst <- "x"
+			gu.y[[i]] <- gwas(sim$y, sim$U[[i]]$G)
+			gu.y[[i]]$inst <- paste0("u",i)
+
+			if(ncol(sim$Gy) > 0)
+			{
+				gy.u[[i]] <- gwas(sim$U[[i]]$p, sim$Gy)
+				gy.u[[i]]$inst <- "y"
+			}
+		}
+		gx <- rbind(gx, bind_rows(gu.x))
+		gy <- rbind(gy, bind_rows(gu.y))
+		gu <- list()
+		for(i in 1:nconf)
+		{
+			if(ncol(sim$Gy) > 0)
+			{
+				gu[[i]] <- rbind(gx.u[[i]], gy.u[[i]])
+			} else {
+				gu[[i]] <- gx.u[[i]]
+			}
+		}
+		names(gu) <- paste0("u", 1:nconf)
+		l <- gu
+	}
+	l$x <- gx
+	l$y <- gy
+	return(l)
+}
+
+system_dat <- function(gwasx, gwasy)
+{
+	gwasx <- filter(gwasx, inst %in% gwasy$inst)
+	gwasy <- filter(gwasy, inst %in% gwasx$inst)
+	dat <- data.frame(
+		exposure="X",
+		id.exposure="X",
+		outcome="Y",
+		id.outcome="Y",
+		beta.exposure=gwasx$bhat,
+		beta.outcome=gwasy$bhat,
+		se.exposure=gwasx$se,
+		se.outcome=gwasy$se,
+		pval.exposure=gwasx$pval,
+		pval.outcome=gwasy$pval,
+		samplesize.exposure=gwasx$n,
+		samplesize.outcome=gwasy$n,
+		mr_keep=TRUE,
+		inst=gwasx$inst
+	)
+	return(recode_dat(dat))
+}
+
