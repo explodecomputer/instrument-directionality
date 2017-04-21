@@ -221,11 +221,9 @@ make_datg <- function(gwasx, gwasy)
 
 }
 
-init_parameters <- function(nid, nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var_gy.y=0, mu_gx.y=0, var_gy.x=0, mu_gy.x=0)
+init_parameters <- function(nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var_gy.y=0, mu_gx.y=0, var_gy.x=0, mu_gy.x=0)
 {
 	parameters <- list(
-		nid = nid,
-
 		# Causal effect
 		var_x.y = var_x.y,
 
@@ -246,12 +244,16 @@ init_parameters <- function(nid, nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0
 
 add_u <- function(parameters, nsnp_u, var_u.x, var_u.y, var_gu.u)
 {
+	nom <- "u"
+	if(var_u.x == 0 & var_u.y != 0) nom <- "b"
+	if(var_u.x != 0 & var_u.y == 0) nom <- "a"
 	i <- length(parameters$u) + 1
 	parameters$u[[i]] <- list(
 		nsnp_u = nsnp_u,
 		var_u.x = var_u.x,
 		var_u.y = var_u.y,
-		var_gu.u = var_gu.u
+		var_gu.u = var_gu.u,
+		name_u = nom
 	)
 	return(parameters)
 }
@@ -284,19 +286,19 @@ generate_system_effects <- function(parameters)
 	return(parameters)
 }
 
-simulate_population <- function(parameters)
+simulate_population <- function(parameters, nid)
 {
 	require(dplyr)
 
-	Gx <- matrix(rbinom(parameters$nsnp_x * parameters$nid, 2, 0.5), parameters$nid, parameters$nsnp_x)
+	Gx <- matrix(rbinom(parameters$nsnp_x * nid, 2, 0.5), nid, parameters$nsnp_x)
 
-	Gy <- matrix(rbinom(parameters$nsnp_y * parameters$nid, 2, 0.5), parameters$nid, parameters$nsnp_y)
+	Gy <- matrix(rbinom(parameters$nsnp_y * nid, 2, 0.5), nid, parameters$nsnp_y)
 
 	U <- lapply(parameters$u, function(param)
 	{
-		G <- matrix(rbinom(param$nsnp_u * parameters$nid, 2, 0.5), parameters$nid, param$nsnp_u)
+		G <- matrix(rbinom(param$nsnp_u * nid, 2, 0.5), nid, param$nsnp_u)
 		u <- makePhen(param$eff_gu.u, G)
-		return(list(p=u, G=G))
+		return(list(p=u, G=G, nom=param$name_u))
 	})
 
 
@@ -341,8 +343,11 @@ system_effs <- function(sim)
 
 	gx.x <- gwas(sim$x, sim$Gx)
 	gx.x$inst <- "x"
+	gx.x$snp <- 1:nrow(gx.x)
+	
 	gx.y <- gwas(sim$y, sim$Gx)
 	gx.y$inst <- "x"
+	gx.y$snp <- 1:nrow(gx.y)
 
 	gx <- gx.x
 	gy <- gx.y
@@ -353,10 +358,12 @@ system_effs <- function(sim)
 	{
 		gy.x <- gwas(sim$x, sim$Gy)
 		gy.x$inst <- "y"
+		gy.x$snp <- 1:nrow(gy.x)
 		gx <- rbind(gx, gy.x)
 
 		gy.y <- gwas(sim$y, sim$Gy)
 		gy.y$inst <- "y"
+		gy.y$snp <- 1:nrow(gy.y)
 		gy <- rbind(gy, gy.y)
 	}
 
@@ -367,19 +374,30 @@ system_effs <- function(sim)
 		gu.y <- list()
 		gx.u <- list()
 		gy.u <- list()
+		gu.u <- list()
 		for(i in 1:nconf)
 		{
+			gu.u[[i]] <- gwas(sim$U[[i]]$p, sim$U[[i]]$G)
+			gu.u[[i]]$inst <- paste0("u", i)
+			gu.u[[i]]$snp <- 1:nrow(gu.u[[i]])
+
 			gu.x[[i]] <- gwas(sim$x, sim$U[[i]]$G)
-			gu.x[[i]]$inst <- paste0("u",i)
+			gu.x[[i]]$inst <- paste0("u", i)
+			gu.x[[i]]$snp <- 1:nrow(gu.x[[i]])
+
 			gx.u[[i]] <- gwas(sim$U[[i]]$p, sim$Gx)
 			gx.u[[i]]$inst <- "x"
+			gx.u[[i]]$snp <- 1:nrow(gx.u[[i]])
+
 			gu.y[[i]] <- gwas(sim$y, sim$U[[i]]$G)
-			gu.y[[i]]$inst <- paste0("u",i)
+			gu.y[[i]]$inst <- paste0("u", i)
+			gu.y[[i]]$snp <- 1:nrow(gu.y[[i]])
 
 			if(ncol(sim$Gy) > 0)
 			{
 				gy.u[[i]] <- gwas(sim$U[[i]]$p, sim$Gy)
 				gy.u[[i]]$inst <- "y"
+				gy.u[[i]]$snp <- 1:nrow(gy.u[[i]])
 			}
 		}
 		gx <- rbind(gx, bind_rows(gu.x))
@@ -389,9 +407,9 @@ system_effs <- function(sim)
 		{
 			if(ncol(sim$Gy) > 0)
 			{
-				gu[[i]] <- rbind(gx.u[[i]], gy.u[[i]])
+				gu[[i]] <- rbind(gx.u[[i]], gy.u[[i]], gu.u[[i]])
 			} else {
-				gu[[i]] <- gx.u[[i]]
+				gu[[i]] <- rbind(gx.u[[i]], gy.u[[i]])
 			}
 		}
 		names(gu) <- paste0("u", 1:nconf)
@@ -425,3 +443,92 @@ system_dat <- function(gwasx, gwasy)
 	return(recode_dat(dat))
 }
 
+create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, var_gx.x=0.02, var_gy.y=0.02)
+{
+	parameters <- init_parameters(nsnp_x=20, nsnp_y=20, var_gx.x=var_gx.x, var_gy.y=var_gy.y, var_x.y=var_x.y)
+	if(nu > 0)
+	{
+		for(i in 1:nu)
+		{
+			parameters <- add_u(
+				parameters, 
+				nsnp_u=sample(5:30, 1), 
+				var_u.x=runif(1, min=0.01, max=0.1), 
+				var_u.y=runif(1, min=0.01, max=0.1), 
+				var_gu.u=runif(1, min=0.02, 0.2)
+			)
+		}
+	}
+	if(na > 0)
+	{
+		for(i in 1:nu)
+		{
+			parameters <- add_u(
+				parameters, 
+				nsnp_u=sample(5:30, 1), 
+				var_u.x=runif(1, min=0.01, max=0.1), 
+				var_u.y=0,
+				var_gu.u=runif(1, min=0.02, 0.2)
+			)
+		}
+	}
+	if(nb > 0)
+	{
+		for(i in 1:nu)
+		{
+			parameters <- add_u(
+				parameters, 
+				nsnp_u=sample(5:30, 1), 
+				var_u.x=0,
+				var_u.y=runif(1, min=0.01, max=0.1),
+				var_gu.u=runif(1, min=0.02, 0.2)
+			)
+		}
+	}
+
+	parameters <- generate_system_effects(parameters)
+
+	message("X")
+	pop <- simulate_population(parameters, nidx)
+	x <- system_effs(pop)
+
+	message("Y")
+	pop <- simulate_population(parameters, nidy)
+	y <- system_effs(pop)
+
+	u <- list()
+	if(nu > 0)
+	{
+		for(i in 1:nu)
+		{
+			message("U: ", i, " of ", nu)
+			pop <- simulate_population(parameters, nidu)
+			u[[i]] <- system_effs(pop)
+		}
+	}
+
+	a <- list()
+	if(na > 0)
+	{
+		for(i in 1:na)
+		{
+			message("A: ", i, " of ", na)
+			pop <- simulate_population(parameters, nidu)
+			a[[i]] <- system_effs(pop)
+		}
+	}
+
+	b <- list()
+	if(nb > 0)
+	{
+		for(i in 1:nb)
+		{
+			message("B: ", i, " of ", nb)
+			pop <- simulate_population(parameters, nidu)
+			b[[i]] <- system_effs(pop)
+		}
+	}
+	u <- c(u, a, b)
+	names(u) <- paste0("u", 1:length(u))
+	return(list(x=x, y=y, u=u, parameters=parameters))
+}
