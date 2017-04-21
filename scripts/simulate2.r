@@ -13,6 +13,30 @@ message("running ", chunks, " simulations")
 set.seed(jid)
 
 
+# instrument inclusion
+
+# valid
+# valid_precursor
+# confounder
+# reverse
+
+instrument_validity <- function(ssn)
+{
+	data.frame(
+		hypothesis=rep(c("xy", "yx"), each=4),
+		type=rep(c("valid", "valid_precursor", "confounder", "reverse"), times=2),
+		value=c(
+			sum(ssn$xy$inst  ==  "x"),
+			sum(ssn$xy$inst %in% paste0("u", 6:10)),
+			sum(ssn$xy$inst %in% paste0("u", 1:5)),
+			sum(ssn$xy$inst %in% c("y", paste0("u", 11:15))),
+			sum(ssn$yx$inst  ==  "y"),
+			sum(ssn$yx$inst %in% paste0("u", 11:15)),
+			sum(ssn$yx$inst %in% paste0("u", 1:5)),
+			sum(ssn$yx$inst %in% c("x", paste0("u", 6:10)))
+		)
+	)
+}
 
 test_ss <- function(ss, i)
 {
@@ -48,7 +72,18 @@ test_ss <- function(ss, i)
 	p$nidu <- ss$u[[2]]$x$n[1]
 	p$sim <- i
 
-	return(list(res=res, ruck=ruck, parameters=p))
+	# Instrument validity
+	v1 <- instrument_validity(ss1)
+	v2 <- instrument_validity(ss2)
+	v3 <- instrument_validity(ss3)
+	validity <- bind_cols(
+		bind_rows(v1, v2, v3),
+		expand.grid(1:nrow(v1), strategy=c("oracle", "tophits", "steiger"))
+	)
+	validity$sim <- i
+	validity <- subset(validity, select=-c(Var1))
+
+	return(list(res=res, ruck=ruck, parameters=p, validity=validity))
 }
 
 
