@@ -18,7 +18,7 @@ if [ -n "${1}" ]; then
 fi
 
 i=${PBS_ARRAYID}
-splits=2
+splits=100
 
 cd ${HOME}/repo/instrument-directionality/scripts
 
