@@ -1,6 +1,33 @@
 library(TwoSampleMR)
 library(dplyr)
 
+try_extract_outcome <- function(SNP, id, tries=3)
+{
+	i <- 1
+	out <- 1
+	class(out) <- 'try-error'
+	while(class(out) == 'try-error' & i <= tries)
+	{
+		message("trying iteration ", i)
+		out <- try(extract_outcome_data(SNP, id))
+		i <- i + 1
+	}
+	return(out)
+}
+
+try_extract_instrument <- function(id, pval, tries=3)
+{
+	i <- 1
+	out <- 1
+	class(out) <- 'try-error'
+	while(class(out) == 'try-error' & i <= tries)
+	{
+		message("trying iteration ", i)
+		out <- try(extract_instruments(id, pval))
+		i <- i + 1
+	}
+	return(out)
+}
 toggle_dev("test")
 
 load("../data/extract_everything.rdata")
@@ -29,34 +56,6 @@ original_ids <- traits_orig$id
 remaining_ids <- selected_ids[!selected_ids %in% original_ids]
 
 
-try_extract_outcome <- function(SNP, id, tries=3)
-{
-	i <- 1
-	out <- 1
-	class(out) <- 'try-error'
-	while(class(out) == 'try-error' & i <= tries)
-	{
-		message("trying iteration ", i)
-		out <- try(extract_outcome_data(SNP, id))
-		i <- i + 1
-	}
-	return(out)
-}
-
-try_extract_instrument <- function(id, pval, tries=3)
-{
-	i <- 1
-	out <- 1
-	class(out) <- 'try-error'
-	while(class(out) == 'try-error' & i <= tries)
-	{
-		message("trying iteration ", i)
-		out <- try(extract_instruments(id, pval))
-		i <- i + 1
-	}
-	return(out)
-}
-
 l1 <- list()
 m1 <- list()
 for(i in 1:length(selected_ids))
@@ -70,7 +69,7 @@ for(i in 1:length(selected_ids))
 		temp <- try_extract_outcome(l1[[i]]$SNP, remaining_ids)
 		if(class(temp) != "try-error")
 		{
-			m1[[i]] <- subset(m1[[i]], id %in% selected_ids)
+			m1[[i]] <- subset(m1[[i]], id.outcome %in% selected_ids)
 			m1[[i]] <- rbind(m1[[i]], temp)
 		}
 	} else {
