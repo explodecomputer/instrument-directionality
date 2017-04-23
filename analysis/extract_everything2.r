@@ -6,7 +6,7 @@ toggle_dev("test")
 load("../data/extract_everything.rdata")
 
 ao <- available_outcomes()
-selected_ids <- scan("selected_ids.txt", what=numeric())
+selected_ids <- scan("../data/selected_ids.txt", what=numeric())
 traits <- subset(ao, id %in% selected_ids)
 
 # Select most reliable studies for diseases and risk factors
