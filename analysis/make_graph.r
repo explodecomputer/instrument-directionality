@@ -29,3 +29,5 @@ j <- which(sapply(l, function(x) class(x)=="try-error"))
 
 which(sapply(m, function(x) class(x)=="try-error"))
 m[[36]] <- try(extract_outcome_data(l[[36]]$SNP, traits$id))
+
+save(l, m, file="../data/extract_everything.rdata")
