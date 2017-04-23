@@ -1,7 +1,5 @@
+library(tidyverse)
 library(TwoSampleMR)
-library(dplyr)
-
-toggle_dev("test")
 
 ao <- available_outcomes()
 
@@ -21,18 +19,13 @@ traits <- filter(ao,
 	filter(! id %in% c(299:302))
 
 
+load("../data/extract_everything.rdata")
 
+# Identify NULL elements in list
 
-# get instruments
+i <- which(sapply(l, is.null))
+class(m[[i]])
+j <- which(sapply(l, function(x) class(x)=="try-error"))
 
-l <- list()
-m <- list()
-for(i in 1:nrow(traits))
-{
-    message(i, " of ", nrow(traits))
-    l[[i]] <- try(extract_instruments(traits$id[i], p1=5e-6))
-    m[[i]] <- try(extract_outcome_data(l[[i]]$SNP, traits$id))
-}
-
-save(l, m, file="../data/extract_everything.rdata")
-
+which(sapply(m, function(x) class(x)=="try-error"))
+m[[36]] <- try(extract_outcome_data(l[[36]]$SNP, traits$id))
