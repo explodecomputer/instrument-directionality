@@ -81,4 +81,28 @@ for(i in 1:length(selected_ids))
 
 l <- l1
 m <- m1
+
+for(i in 1:length(l))
+{
+	l[[i]]$exposure <- traits$trait[i]
+	l[[i]]$id.exposure <- traits$id[i]
+	m[[i]]$outcome <- m[[i]]$originalname.outcome
+	index <- is.na(m[[i]]$samplesize.outcome)
+	
+	if(sum(index) > 0)
+	{
+		ids <- unique(m[[i]]$id.outcome[index])
+		for(j in 1:length(ids))
+		{
+			m[[i]]$samplesize.outcome[index & m[[i]]$id.outcome == ids[j]] <- mean(l[[which(traits$id == ids[j])]]$samplesize.exposure)
+		}		
+	}
+}
+
+sapply(m, function(x) sum(is.na(x$samplesize.outcome)))
+sapply(m, function(x) sum(is.na(x$pval.outcome)))
+sapply(m, function(x) sum(!x$mr_keep))
+sapply(l, function(x) sum(!x$mr_keep)/nrow(x))
+
+
 save(l, m, traits, file="../data/extract_everything2.rdata")
