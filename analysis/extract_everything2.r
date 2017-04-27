@@ -106,3 +106,13 @@ sapply(l, function(x) sum(!x$mr_keep)/nrow(x))
 
 
 save(l, m, traits, file="../data/extract_everything2.rdata")
+
+d <- list()
+for(i in 1:length(l))
+{
+	message(i)
+	a <- subset(l[[i]], pval.exposure < 5e-8)
+	d[[i]] <- harmonise_data(a, m[[i]])
+}
+
+save(d, file="../data/extract_data.rdata")

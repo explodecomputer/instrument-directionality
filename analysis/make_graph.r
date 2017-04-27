@@ -1,41 +1,10 @@
 library(tidyverse)
 library(TwoSampleMR)
 
-ao <- available_outcomes()
-
-
-# Select most reliable studies for diseases and risk factors
-# Exclude lipids
-traits <- filter(ao, 
-		category %in% c("Disease", "Risk factor"),
-		(grepl("Mixed", population) | grepl("European", population)),
-		mr == 1,
-		sample_size > 1000,
-		nsnp > 95000,
-		access %in% c("immunobase_users", "public")
-	) %>%
-	arrange(desc(year), desc(nsnp)) %>%
-	distinct(trait, .keep_all=TRUE) %>%
-	filter(! id %in% c(299:302))
-
-
 load("../data/extract_everything2.rdata")
+load("../data/extract_data.rdata")
 
 # Identify NULL elements in list
-
-which(sapply(m, function(x) class(x)=="try-error"))
-which(sapply(l, function(x) class(x)=="try-error"))
-
-sapply(l, nrow)
-table(sapply(l, function(x) sum(x$pval.exposure < 5e-8)) == 0)
-
-d <- list()
-for(i in 1:length(l))
-{
-	message(i)
-	a <- subset(l[[i]], pval.exposure < 5e-8)
-	d[[i]] <- harmonise_data(a, m[[i]])
-}
 
 m_ivw <- lapply(d, function(x) {
 	mr(x, method_list=c("mr_wald_ratio", "mr_ivw"))
@@ -46,18 +15,57 @@ m_weighted_median <- lapply(d, function(x) {
 })
 
 m_mode <- lapply(d, function(x) {
-	mr(x, method_list=c("mr_wald_ratio", "mr_mode"))
+	group_by(x, id.exposure, id.outcome) %>%
+	do({
+		x <- .
+		print(head(x))
+		mr_mode(x)
+	})
 })
 
-mr(d[[4]])
 
-index <- which(sapply(m_ivw, function(x) nrow(x)==0))
 
-length(m_ivw)
-dim(traits)
 
-temp <- m_ivw[-index]
-traits2 <- traits[-index, ]
+# Mode
+# Median
+# IVW
+# Egger
+# Rucker
+# Rucker (CD)
+
+# Steiger
+
+
+
+
+make_tab <- function(m)
+{
+	index <- which(sapply(m, function(x) nrow(x)==0))
+	index <- which(sapply(m, function(x) nrow(x)==0))
+	temp <- m[-index]
+	m <- bind_rows(temp)
+	# m <- subset(m, id.exposure != id.outcome)
+	m$pval_bonf <- p.adjust(m$pval, "bonferroni")
+	m$pval_fdr <- p.adjust(m$pval, "fdr")
+	return(m)
+}
+
+mwm <- make_tab(m_weighted_median)
+mivw <- make_tab(m_ivw)
+
+
+table(mwm$pval < 0.05)
+table(mivw$pval < 0.05)
+
+table(mwm$pval_fdr < 0.05)
+table(mivw$pval_fdr < 0.05)
+
+table(mwm$pval_bonf < 0.05)
+table(mivw$pval_bonf < 0.05)
+
+tail(subset(mwm, pval_bonf < 0.05))
+
+
 for(i in 1:nrow(traits2))
 {
 	temp[[i]] <- subset(temp[[i]], !id.outcome == traits2$id[i])
@@ -78,4 +86,24 @@ dim(a)
 table(a$exposure)
 
 subset(a, exposure == "Intracranial volume || ENIGMA || 2015 || mm3")
+
+
+
+steiger_simple <- function(p_exp, p_out, n_exp, n_out)
+{
+	r_exp <- sqrt(sum(get_r_from_pn(p_exp, n_exp)^2))
+	r_out <- sqrt(sum(get_r_from_pn(p_out, n_out)^2))
+	rtest <- psych::r.test(n = mean(n_exp), n2 = mean(n_out), r12 = r_exp, r34 = r_out)
+	return(list(dir=r_exp > r_out, pval=rtest$p))
+}
+
+
+steiger_dat <- function(dat, steiger_threshold)
+{
+	group_by(dat, id.exposure, id.outcome)
+}
+
+
+sapply(m, function(x) length(is.na(x$samplesize.outcome)))
+
 
