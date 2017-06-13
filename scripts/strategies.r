@@ -1,6 +1,8 @@
 
 steiger_simple <- function(p_exp, p_out, n_exp, n_out)
 {
+	p_exp[p_exp == 0] <- 1e-200
+	p_out[p_out == 0] <- 1e-200
 	r_exp <- sqrt(sum(get_r_from_pn(p_exp, n_exp)^2))
 	r_out <- sqrt(sum(get_r_from_pn(p_out, n_out)^2))
 	rtest <- psych::r.test(n = mean(n_exp), n2 = mean(n_out), r12 = r_exp, r34 = r_out)
