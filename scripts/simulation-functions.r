@@ -221,7 +221,7 @@ make_datg <- function(gwasx, gwasy)
 
 }
 
-init_parameters <- function(nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var_gy.y=0, mu_gx.y=0, var_gy.x=0, mu_gy.x=0)
+init_parameters <- function(nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var_gy.y=0, mu_gx.y=0, var_gy.x=0, mu_gy.x=0, prop_gy.x=1, prop_gx.y=1)
 {
 	parameters <- list(
 		# Causal effect
@@ -232,11 +232,13 @@ init_parameters <- function(nsnp_x, var_gx.x, var_x.y, var_gx.y=0, nsnp_y=0, var
 		var_gx.x = var_gx.x,
 		var_gx.y = var_gx.y,
 		mu_gx.y = mu_gx.y,
+		prop_gx.y = prop_gx.y,
 
 		nsnp_y = nsnp_y,
 		var_gy.y = var_gy.y,
 		var_gy.x = var_gy.x,
 		mu_gy.x = mu_gy.x,
+		prop_gy.x = prop_gy.x,
 		u = list()
 	)
 	return(parameters)
@@ -259,6 +261,53 @@ add_u <- function(parameters, nsnp_u, var_u.x, var_u.y, var_gu.u)
 }
 
 generate_system_effects <- function(parameters)
+{
+	nu <- length(parameters$u)
+	if(nu > 0)
+	{
+		for(i in 1:nu)
+		{
+			parameters$u[[i]]$eff_gu.u <- chooseEffects(parameters$u[[i]]$nsnp_u, parameters$u[[i]]$var_gu.u)
+			parameters$u[[i]]$eff_u.x <- chooseEffects(1, parameters$u[[i]]$var_u.x)
+			parameters$u[[i]]$eff_u.y <- chooseEffects(1, parameters$u[[i]]$var_u.y)
+		}
+	}
+
+	# Make genetic effects for x instruments
+	parameters$eff_gx.x <- chooseEffects(parameters$nsnp_x, parameters$var_gx.x)
+
+	# Make genetic effects for y instruments
+	parameters$eff_gy.y <- chooseEffects(parameters$nsnp_y, parameters$var_gy.y)
+
+
+	# Create pleiotropic effects for some proportion of the effects
+	# X-Y
+	nchoose <- round(parameters$nsnp_x * parameters$prop_gx.y)
+	ind <- sample(1:parameters$nsnp_x, nchoose, replace=FALSE)
+	parameters$eff_gx.y <- rep(0, parameters$nsnp_x)
+	if(nchoose > 0)
+	{
+		parameters$eff_gx.y[ind] <- chooseEffects(nchoose, parameters$var_gx.y, mua=parameters$mu_gx.y)
+	}
+
+	# Create pleiotropic effects for some proportion of the effects
+	# Y-X
+	nchoose <- round(parameters$nsnp_y * parameters$prop_gy.x)
+	ind <- sample(1:parameters$nsnp_y, nchoose, replace=FALSE)
+	parameters$eff_gy.x <- rep(0, parameters$nsnp_y)
+	if(nchoose > 0)
+	{
+		parameters$eff_gy.x[ind] <- chooseEffects(nchoose, parameters$var_gy.x, mua=parameters$mu_gy.x)
+	}
+
+	parameters$eff_u.x <- sapply(parameters$u, function(x) chooseEffects(1, x$var_u.x))
+	parameters$eff_u.y <- sapply(parameters$u, function(x) chooseEffects(1, x$var_u.y))
+	parameters$eff_x.y <- sqrt(parameters$var_x.y)
+
+	return(parameters)
+}
+
+generate_system_effects_old <- function(parameters)
 {
 	nu <- length(parameters$u)
 	if(nu > 0)
@@ -443,9 +492,11 @@ system_dat <- function(gwasx, gwasy)
 	return(recode_dat(dat))
 }
 
-create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, var_gx.x=0.02, var_gy.y=0.02)
+
+
+create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, nsnp_x, var_gx.x, var_gx.y=0, mu_gx.y=0, prop_gx.y=1, nsnp_y=0, var_gy.y=0, var_gy.x=0, mu_gy.x=0, prop_gy.x=1, simulate_nonxy=FALSE)
 {
-	parameters <- init_parameters(nsnp_x=20, nsnp_y=20, var_gx.x=var_gx.x, var_gy.y=var_gy.y, var_x.y=var_x.y)
+	parameters <- init_parameters(nsnp_x=nsnp_x, nsnp_y=nsnp_y, var_gx.x=var_gx.x, var_gy.y=var_gy.y, var_x.y=var_x.y, var_gx.y=var_gx.y, mu_gx.y=mu_gx.y, prop_gx.y=prop_gx.y, var_gy.x=var_gy.x, mu_gy.x=mu_gy.x, prop_gy.x=prop_gy.x)
 	if(nu > 0)
 	{
 		for(i in 1:nu)
@@ -461,7 +512,7 @@ create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, var_gx.x=0.02, 
 	}
 	if(na > 0)
 	{
-		for(i in 1:nu)
+		for(i in 1:na)
 		{
 			parameters <- add_u(
 				parameters, 
@@ -474,7 +525,7 @@ create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, var_gx.x=0.02, 
 	}
 	if(nb > 0)
 	{
-		for(i in 1:nu)
+		for(i in 1:nb)
 		{
 			parameters <- add_u(
 				parameters, 
@@ -496,39 +547,45 @@ create_system <- function(nidx, nidy, nidu, nu, na, nb, var_x.y, var_gx.x=0.02, 
 	pop <- simulate_population(parameters, nidy)
 	y <- system_effs(pop)
 
-	u <- list()
-	if(nu > 0)
-	{
-		for(i in 1:nu)
-		{
-			message("U: ", i, " of ", nu)
-			pop <- simulate_population(parameters, nidu)
-			u[[i]] <- system_effs(pop)
-		}
-	}
+	out <- list(x=x, y=y, parameters=parameters)
 
-	a <- list()
-	if(na > 0)
+	if(simulate_nonxy)
 	{
-		for(i in 1:na)
+		u <- list()
+		if(nu > 0)
 		{
-			message("A: ", i, " of ", na)
-			pop <- simulate_population(parameters, nidu)
-			a[[i]] <- system_effs(pop)
+			for(i in 1:nu)
+			{
+				message("U: ", i, " of ", nu)
+				pop <- simulate_population(parameters, nidu)
+				u[[i]] <- system_effs(pop)
+			}
 		}
-	}
 
-	b <- list()
-	if(nb > 0)
-	{
-		for(i in 1:nb)
+		a <- list()
+		if(na > 0)
 		{
-			message("B: ", i, " of ", nb)
-			pop <- simulate_population(parameters, nidu)
-			b[[i]] <- system_effs(pop)
+			for(i in 1:na)
+			{
+				message("A: ", i, " of ", na)
+				pop <- simulate_population(parameters, nidu)
+				a[[i]] <- system_effs(pop)
+			}
 		}
+
+		b <- list()
+		if(nb > 0)
+		{
+			for(i in 1:nb)
+			{
+				message("B: ", i, " of ", nb)
+				pop <- simulate_population(parameters, nidu)
+				b[[i]] <- system_effs(pop)
+			}
+		}
+		u <- c(u, a, b)
+		names(u) <- paste0("u", 1:length(u))
+		out$u <- u
 	}
-	u <- c(u, a, b)
-	names(u) <- paste0("u", 1:length(u))
-	return(list(x=x, y=y, u=u, parameters=parameters))
+	return(out)
 }
