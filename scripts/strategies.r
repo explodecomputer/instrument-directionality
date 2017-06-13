@@ -248,175 +248,105 @@ strategies_spider <- function(ss, steiger_thresh=0.05)
 	}
 }
 
-nid <- 500000
-eff <- 0.015
-g <- rbinom(nid, 2, 0.5)
-y <- scale(g) * sqrt(eff) + rnorm(nid, sd=sqrt(1-eff))
 
-cc1 <- y
-cc1[y < quantile(y, 0.5)] <- 1
-cc1[y >= quantile(y, 0.5)] <- 0
-
-cc2 <- y
-cc2[y < quantile(y, 0.1)] <- 1
-cc2[y >= quantile(y, 0.1)] <- 0
-
-cc3 <- y
-cc3[y < quantile(y, 0.05)] <- 1
-cc3[y >= quantile(y, 0.05)] <- 0
-
-cor(g, y)^2
-cor(g, cc1)^2
-cor(g, cc2)^2
-cor(g, cc3)^2
-
-m1 <- glm(cc1 ~ g, family="binomial")
-m2 <- glm(cc2 ~ g, family="binomial")
-m3 <- glm(cc3 ~ g, family="binomial")
-
-NagelkerkeR2(m1)
-NagelkerkeR2(m2)
-NagelkerkeR2(m3)
-
-
-p <- 0.5
-1 - (p^p * (1-p)^(1-p))^2
-1 - exp(-m1$null/nid)
-
-1 - (p^p * (1-p)^(1-p))^2 - 1
-- exp(-m1$null/nid)
-
-log(-(1 - (p^p * (1-p)^(1-p))^2 - 1))
-- m1$null/nid
-
-
-log(-(1 - (p^p * (1-p)^(1-p))^2 - 1)) * -nid
-m1$null
-
-or <- log(m1$coefficients[1])
-
-or
-
-f1 <- glm(cc1 ~ sample(g), family="binomial")
-f1$dev
-f1$null
-
-log(f1$null)
-
-m1
-m2
-m3
-(m1^2 * 2 * 0.5 * 0.5 / var(cc1))
-(m2^2 * 2 * 0.5 * 0.5 / var(cc2))
-(m3^2 * 2 * 0.5 * 0.5 / var(cc3))
-
-0.5/0.5
-
-dnorm(0.1)^2
-
-
-log(m1$null)
-
-
-1-exp(-n1$null/nid)
-NagelkerkeR2(m3)
-
-(1 - NagelkerkeR2(m3)$R2) ^ (1/(2/nid))
-
-cor()
-
-
-index1 <- cc1 == 1
-index1[sample(which(cc1 == 0), sum(index1), replace=FALSE)] <- TRUE
-table(index1, cc1)
-
-index2 <- cc2 == 1
-index2[sample(which(cc2 == 0), sum(index2), replace=FALSE)] <- TRUE
-table(index2, cc2)
-
-index3 <- cc3 == 1
-index3[sample(which(cc3 == 0), sum(index3), replace=FALSE)] <- TRUE
-table(index3, cc3)
-
-
-
-(m1c <- glm(cc1[index1] ~ g[index1], family="binomial"))
-(m2c <- glm(cc2[index2] ~ g[index2], family="binomial")$coefficients[2])
-(m3c <- glm(cc3[index3] ~ g[index3], family="binomial")$coefficients[2])
-
-sum(g[index1]) / (2 * sum(index1))
-sum(g[index2]) / (2 * sum(index2))
-sum(g[index3]) / (2 * sum(index3))
-
-(m1c^2 * 2 * 0.5 * 0.5 / var(cc1))^2
-cor()
-
-
-NagelkerkeR2()
-
-
-
-
-set.seed(17)
-i<-0
-sim <- replicate(1e4, {
-  while(TRUE) {
-    x <- matrix(round(rexp(4), 2), 2, 2)
-    if(all(rowSums(x) > 0) && all(colSums(x) > 0) && x[1,2]*x[2,1] > 0) break
-  }
-  x <- x / sum(x)
-  beta <- rowSums(x)[1]
-  gamma <- colSums(x)[1]
-  rho <- x[1,1]*x[2,2] / (x[1,2]*x[2,1])
-
-  y<- f(beta, gamma, rho)
-  delta <- try(zapsmall(c(1, sqrt(crossprod(as.vector(x-y)))))[2])
-  if ("try-error" %in% class(delta)) cat("Error processing ", x, "\n")
-  delta
-})
-max(sim)
-
-f(1.2, 0.2, 0.5)
-f(log(1.2), 0.2, 0.5)
-
-A <- 200
-B <- 400
-C <- 200
-D <- 1000
-OR <- A*D/(B*C)
-N <- A+B+C+D
-f((A+B)/N, (A+C)/N, OR)
-
-
-
-
-A/N
-B/N
-C/N
-D/N
-
-
-cont_from_or <- function(prevalence, allele_frequency, oddsratio, eps=1e-15)
+system_metrics <- function(dat)
 {
-	a <- oddsratio-1
-	b <- (prevalence+allele_frequency)*(1-oddsratio)-1
-	c_ <- oddsratio*prevalence*allele_frequency
+	library(car)
 
-	if (abs(a) < eps) {
-	z <- -c_ / b
-	} else {
-	d <- b^2 - 4*a*c_
-	if (d < eps*eps) s <- 0 else s <- c(-1,1)
-	z <- (-b + s*sqrt(max(0, d))) / (2*a)
+	# Number of SNPs
+	# Sample size outcome
+	# Sample size exposure
+	metrics <- list()
+	metrics$nsnp <- nrow(dat)
+	metrics$nout <- mean(dat$samplesize.outcome, na.rm=TRUE)
+	metrics$nexp <- mean(dat$samplesize.exposure, na.rm=TRUE)
+
+	# F stats
+	Fstat <- qf(dat$pval.exposure, 1, dat$samplesize.exposure, lower.tail=FALSE)
+	Fstat[is.infinite(Fstat)] <- 300
+	metrics$meanF <- mean(Fstat, na.rm=TRUE)
+	metrics$varF <- var(Fstat, na.rm=TRUE)
+	metrics$medianF <- median(Fstat, na.rm=TRUE)
+
+	# IF more than 1 SNP
+
+	if(nrow(dat) > 1)
+	{
+		# Egger-Isq
+		metrics$egger_isq <- Isq(dat$beta.exposure, dat$se.exposure)
 	}
-	y <- vapply(z, function(a) zapsmall(matrix(c(a, allele_frequency-a, prevalence-a, 1+a-prevalence-allele_frequency), 2, 2)), matrix(0.0, 2, 2))
-	i <- apply(y, 3, function(u) all(u >= 0))
-	return(y[,,i])
+
+	if(nrow(dat) > 2)
+	{	
+		# IF more than 2 SNP
+		ruck <- mr_rucker(dat)
+
+		# Q_ivw
+		# Q_egger
+		# Q_diff
+		metrics$Isq <- (ruck$Q$Q[1] - (ruck$Q$df[1]-1))/ruck$Q$Q[1]
+		metrics$Isqe <- (ruck$Q$Q[2] - (ruck$Q$df[2]-1))/ruck$Q$Q[2]
+		metrics$Qdiff <- ruck$Q$Q[3]
+
+		# Intercept / se
+		metrics$intercept <- abs(ruck$intercept$Estimate[1]) / ruck$intercept$SE[1]
+
+		# Influential outliers
+		dfbeta_thresh <- 2 * nrow(dat)^-0.5
+		cooksthresh1 <- 4 / (nrow(dat) - 2)
+		cooksthresh2 <- 4 / (nrow(dat) - 3)
+		inf1 <- influence.measures(ruck$lmod_ivw)$infmat
+		inf2 <- influence.measures(ruck$lmod_egger)$infmat
+		metrics$dfb1_ivw <- sum(inf1[,1] > dfbeta_thresh) / nrow(dat)
+		metrics$dfb2_ivw <- sum(inf1[,2] > dfbeta_thresh) / nrow(dat)
+		metrics$dfb3_ivw <- sum(inf1[,3] > dfbeta_thresh) / nrow(dat)
+		metrics$cooks_ivw <- sum(inf1[,4] > cooksthresh1) / nrow(dat)
+		metrics$dfb1_egger <- sum(inf2[,1] > dfbeta_thresh) / nrow(dat)
+		metrics$dfb2_egger <- sum(inf2[,2] > dfbeta_thresh) / nrow(dat)
+		metrics$dfb3_egger <- sum(inf2[,3] > dfbeta_thresh) / nrow(dat)
+		metrics$cooks_egger <- sum(inf2[,4] > cooksthresh2) / nrow(dat)
+
+		# Homoscedasticity
+		metrics$homosc_ivw <- car::ncvTest(ruck$lmod_ivw)$ChiSquare
+		metrics$homosc_egg <- car::ncvTest(ruck$lmod_egger)$ChiSquare
+
+		# Normality of residuals
+		metrics$shap_ivw <- shapiro.test(residuals(ruck$lmod_ivw))$statistic
+		metrics$shap_egger <- shapiro.test(residuals(ruck$lmod_egger))$statistic
+		metrics$ks_ivw <- ks.test(residuals(ruck$lmod_ivw), "pnorm")$statistic
+		metrics$ks_egger <- ks.test(residuals(ruck$lmod_egger), "pnorm")$statistic
+
+	}
+	return(metrics)
 }
 
-cont_from_or(0.5, 0.5, exp(m1$coefficients[2]))
-sum(cc1 & )/nid
-
-(sum(cc1 & g==2)*2 + sum(cc1 & g==1)) / (2*nid)
 
 
+get_metrics <- function(dat)
+{
+	metrics <- system_metrics(dat)
+	# Steiger
+	l0 <- list()
+	for(i in 1:nrow(dat))
+	{
+		l0[[i]] <- steiger_simple(
+			dat$pval.exposure[i], 
+			dat$pval.outcome[i], 
+			dat$samplesize.exposure[i], 
+			dat$samplesize.outcome[i]
+		)
+	}
+	steiger_keep <- sapply(l0, function(x) x$dir & x$pval < 0.05)
+	metrics$st_correct <- sum(steiger_keep) / nrow(dat)
+	metrics$st_unknown <- sum(sapply(l0, function(x) x$pval < 0.05)) / nrow(dat)
+	metrics$st_incorrect <- sum(sapply(l0, function(x) !x$dir & x$pval < 0.05)) / nrow(dat)
+
+	dat2 <- dat[steiger_keep, ]
+	if(nrow(dat2) > 0 & nrow(dat2) != nrow(dat))
+	{
+		metrics2 <- system_metrics(dat2)
+		names(metrics2) <- paste0(names(metrics2), "_after_steiger")
+		metrics <- c(metrics, metrics2)
+	}
+	return(metrics)
+}
