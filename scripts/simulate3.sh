@@ -4,7 +4,7 @@
 #PBS -o job_reports/inst-dir-output
 #PBS -e job_reports/inst-dir-error
 #PBS -l walltime=12:00:00
-#PBS -t 1-100
+#PBS -t 101-200
 #PBS -l nodes=1:ppn=1
 #PBS -S /bin/bash
 
