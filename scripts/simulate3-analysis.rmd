@@ -276,18 +276,19 @@ temp <- temp %>% group_by(sim, hypothesis) %>%
 	})
 
 temp$simid <- paste(temp$sim, temp$hypothesis)
+temp$Method <- paste(temp$Method, temp$strategy)
 temp2$simid <- paste(temp2$sim, temp2$hypothesis)
 table(temp2$simid %in% temp$simid)
 table(temp$simid %in% temp2$simid)
 
-temp <- temp %>% as.data.frame() %>% select(simid, Method)
+temp <- temp %>% as.data.frame() %>% dplyr::select(simid, Method)
 
 temp2 <- inner_join(temp, by="simid", temp2)
 temp2 <- subset(temp2, select=-c(hypothesis, sim, simid))
 
 
 badvar <- apply(temp2, 2, function(x) var(x, na.rm=TRUE))
-badid <- apply(temp2, 1, function(x) any(is.na(x)))
+badid <- apply(training, 1, function(x) any(is.na(x)))
 method_choices <- temp2[!badid, ]
 
 save(method_choices, file="../results/simulate3-methods.rdata")
@@ -295,24 +296,34 @@ save(method_choices, file="../results/simulate3-methods.rdata")
 ```
 
 ```{r }
-
-load("../results/simulate3-methods.rdata")
-
-training_index <- sample(1:nrow(method_choices), nrow(method_choices) * 0.66, replace=FALSE)
-testing_index <- c(1:nrow(method_choices))[! c(1:nrow(method_choices)) %in% training_index]
-
-training <- method_choices[training_index, ]
-testing <- method_choices[testing_index, ]
-training$Method <- as.factor(training$Method)
-
 library(randomForest) # randomForest
 library(MASS) # lda
 library(partykit) # ctree
+library(tidyverse)
+
+load("../results/simulate3.rdata")
+load("../results/simulate3-methods.rdata")
+
+meth <- expand.grid(Method=unique(res$Method), strategy=c("steiger", "tophits"))
+meth$root <- rep(c(rep("Mean", 7), rep("Mode", 4), rep("Median", 3)), 2)
+
+temp <- method_choices
+
+ind <- match(temp$Method, paste(meth$Method, meth$strategy))
+stopifnotall(temp$Method == paste(meth$Method, meth$strategy)[ind])
+
+temp$Method <- as.factor(paste(meth$root[ind], meth$strategy[ind]))
+
+training_index <- sample(1:nrow(temp), nrow(temp) * 0.66, replace=FALSE)
+testing_index <- c(1:nrow(temp))[! c(1:nrow(temp)) %in% training_index]
+
+training <- temp[training_index, ]
+testing <- temp[testing_index, ]
+training$Method <- as.factor(training$Method)
 
 
-
-method.model.rf <- randomForest(Method ~ nsnp + nout + nexp, data=training, ntree=5000, mtry=15, importance=TRUE)
+method.model.rf <- randomForest(Method ~ ., data=training, ntree=5000, mtry=15, importance=TRUE, do.trace=TRUE)
 method.model.ctree <- ctree(Method ~ ., data=training)
-method.model.lda <- lda(Method ~ ., data=training)
+method.model.lda <- lda(Method ~ , data=training[1000,])
 
 ```
