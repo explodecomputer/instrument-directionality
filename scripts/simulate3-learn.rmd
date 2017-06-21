@@ -159,6 +159,46 @@ make_optim_dataset <- function(optvec, res, metrics, ncores)
 }
 
 
+
+
+make_optim_dataset2 <- function(optvec, res, metrics, ncores)
+{
+	# For each method calculate the abs(bias) for each simulation
+	# Fit RF of metrics against abs(bias)
+
+	require(tidyverse)
+	require(MASS)
+	require(parallel)
+
+	res$optvec <- optvec
+
+	temp <- subset(res, strategy != "oracle", select=c(optvec, Method, strategy, hypothesis, sim))
+	temp$method <- paste0(temp$Method, " - ", temp$strategy)
+	# temp$optvec <- abs(temp$Estimate - temp$eff_x.y)
+	temp <- subset(temp, select=-c(Method, strategy))
+
+	sp <- subset(temp, method == method[1], select=c(sim, hypothesis))
+	sp$tt <- runif(1:nrow(sp))
+
+	temp <- inner_join(temp, sp, by=c("hypothesis", "sim"))
+	ind <- temp$tt > 0.33
+
+	l <- split(temp[ind,], temp$method[ind])
+
+	rf <- mclapply(l, function(x){
+		message(x$method[1])
+		x <- inner_join(x, metrics, by=c("hypothesis", "sim")) %>%
+			dplyr::select(-c(hypothesis, sim, method, tt))
+
+		return(lda(optvec ~ ., x))
+	}, mc.cores=ncores)
+
+	out <- list(rf=rf, sp=sp)
+	return(out)
+}
+
+
+
 test_predictor <- function(rf, sp, res, metrics)
 {
 	temp <- subset(res, strategy != "oracle", select=c(Estimate, eff_x.y, Method, strategy, hypothesis, sim))
@@ -176,6 +216,10 @@ test_predictor <- function(rf, sp, res, metrics)
 	{
 		message(nom[i])
 		pr <- predict(rf[[nom[i]]], subset(met, select=-c(hypothesis, sim)))
+		if(is.list(pr)) 
+		{
+			pr <- as.numeric(pr$x)
+		}
 		x <- tibble(pr=pr, hypothesis=met$hypothesis, sim=met$sim)
 		y <- subset(temp, method == nom[i])
 		xy <- inner_join(x, y, by=c("hypothesis", "sim"))
@@ -201,7 +245,12 @@ add_method <- function(rf, sp, res, metrics)
 	for(i in 1:length(nom))
 	{
 		message(nom[i])
-		d[[nom[i]]] <- predict(rf[[nom[i]]], subset(met, select=-c(hypothesis, sim)))
+		p <- predict(rf[[nom[i]]], subset(met, select=-c(hypothesis, sim)))
+		if(is.list(p))
+		{
+			p <- as.numeric(p$x)
+		}
+		d[[nom[i]]] <- p
 	}
 
 	sel <- tibble(
@@ -219,7 +268,7 @@ add_method <- function(rf, sp, res, metrics)
 	return(res3)
 }
 
-myModel$votes <- NULL myModel$predicted <- NULL myModel$oob.times <- NULL myModel$y <- NULL
+
 
 opt1 <- rep(0, nrow(res))
 opt1[res$hypothesis == "xy" & res$eff_x.y != 0 & res$P < 0.001] <- 1
@@ -233,19 +282,29 @@ pr2 <- test_predictor(rf2$rf, rf2$sp, res, metrics)
 
 res_rf2 <- add_method(rf2$rf, rf2$sp, res, metrics)
 eval_rf2 <- simeval(res_rf2)
-# eval_rf2[[3]]
-
-
-
-rf2$rf <- lapply(rf2$rf, function(x) {
-	x$votes <- NULL
-	x$predicted <- NULL
-	x$oob.times <- NULL
-	x$y <- NULL
-	return(x)
-)}
+eval_rf2[[4]]
 
 save(rf2, res_rf2, pr2, eval_rf2, file="../results/rf2.rdata")
+
+
+res_lda1 <- add_method(lda1$rf, lda1$sp, res, metrics)
+eval_lda1 <- simeval(res_lda1)
+eval_lda1[[4]]
+
+
+opt2 <- as.factor(opt1)
+lda1 <- make_optim_dataset2(opt2, res, metrics, 2)
+prlda1 <- test_predictor(lda1$rf, lda1$sp, res, metrics)
+
+save(lda1, eval_lda1, file="../results/lda1.rdata")
+
+x <- lda1$rf
+save(x, file="temp.rdata")
+
+
+
+
+
 
 
 # Make new optim instead of bias - ratio of p(xy) / p(yx)
