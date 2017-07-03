@@ -71,7 +71,7 @@ res <- inner_join(res, param, by="sim")
 simeval <- function(res)
 {
 
-	res$Method <- paste0(res$Method, " - ", res$strategy)
+	# res$Method <- paste0(res$Method, " - ", res$strategy)
 
 	require(tidyverse)
 	require(ggrepel)
@@ -167,7 +167,9 @@ simeval <- function(res)
 
 a <- simeval(res)
 a[[1]]
+ggsave("../images/steiger_pow.pdf", width=6, height=3)
 a[[2]]
+ggsave("../images/steiger_fdr.pdf", width=6, height=3)
 a[[3]]
 a[[4]]
 ```
@@ -177,7 +179,7 @@ Is Steiger finding better instruments?
 
 ```{r }
 
-validity_s <- group_by(validity, hypothesis, strategy) %>%
+validity_s <- group_by(validity, strategy) %>%
 	summarise(
 		n=sum(value), 
 		direct=sum(value[type=="valid"])/n,
@@ -187,12 +189,13 @@ validity_s <- group_by(validity, hypothesis, strategy) %>%
 validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
 
 
-ggplot(validity_sl, aes(x=strategy, y=value)) +
+ggplot(filter(validity_sl, strategy != "oracle"), aes(x=strategy, y=value)) +
 geom_bar(stat="identity", position="dodge", aes(fill=key)) +
-facet_grid(. ~ hypothesis) +
 scale_fill_brewer(type='qual') +
-labs(y="Proportion of instruments", fill="Instrument type")
-
+labs(y="Proportion of instruments", fill="SNP association") +
+geom_text(aes(y=value+0.04, label=round(value, 2), fill=key), position=position_dodge(width=0.9)) +
+theme(axis.text.y=element_blank(), axis.ticks=element_blank())
+ggsave("../images/steiger_validity.pdf", width=6, height=6)
 ```
 
 

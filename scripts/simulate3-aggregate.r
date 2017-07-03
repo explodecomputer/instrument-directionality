@@ -1,6 +1,6 @@
 library(dplyr)
 
-nom <- paste0("../results/simulate3_", 1:200, "-metrics.rdata")
+nom <- paste0("../results/simulate3_", 1:500, "-metrics.rdata")
 res <- list()
 metrics <- list()
 validity <- list()
