@@ -38,6 +38,7 @@ library(tidyverse)
 load("../results/simulate3.rdata")
 
 res <- inner_join(res, param, by="sim")
+validity <- inner_join(validity, param, by="sim")
 
 # meth <- data_frame(Method=unique(res$Method))
 # meth$root <- c(rep("Mean", 7), rep("Mode", 4), rep("Median", 3))
@@ -179,7 +180,12 @@ Is Steiger finding better instruments?
 
 ```{r }
 
-validity_s <- group_by(validity, strategy) %>%
+validity$n <- validity$nidx
+validity$n[validity$hypothesis == "yx"] <- validity$nidy[validity$hypothesis == "yx"]
+
+validity$nbin <- cut(validity$n, breaks=10, labels=FALSE)
+
+validity_s <- group_by(validity, strategy, nbin) %>%
 	summarise(
 		n=sum(value), 
 		direct=sum(value[type=="valid"])/n,
@@ -187,7 +193,7 @@ validity_s <- group_by(validity, strategy) %>%
 		reverse=sum(value[type=="reverse"])/n
 	)
 validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
-
+save(validity_sl, file="validity.rdata")
 
 ggplot(filter(validity_sl, strategy != "oracle"), aes(x=strategy, y=value)) +
 geom_bar(stat="identity", position="dodge", aes(fill=key)) +
@@ -197,6 +203,20 @@ geom_text(aes(y=value+0.04, label=round(value, 2), fill=key), position=position_
 theme(axis.text.y=element_blank(), axis.ticks=element_blank())
 ggsave("../images/steiger_validity.pdf", width=6, height=6)
 ```
+
+validity_sl$nbin <- validity_sl$nbin * 50000
+
+ggplot(filter(validity_sl, strategy != "oracle"), aes(x=nbin, y=value)) +
+geom_point(aes(colour=key)) +
+geom_line(aes(colour=key)) +
+facet_grid(. ~ strategy) +
+scale_colour_brewer(type="qual") +
+labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+ggsave("../images/steiger_validity_nbin.pdf", width=6, height=6)
+
+
+
 
 
 How does each method perform in terms of finding true positives?
