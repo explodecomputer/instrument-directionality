@@ -1,0 +1,98 @@
+---
+title: Analysis of version 3 simulations
+author: Gibran Hemani
+date: 15/06/2017
+---
+
+
+
+```{r }
+
+library(tidyverse)
+source('../scripts/fun-analysis.r')
+load("../results/simulate3.rdata")
+
+res <- inner_join(res, param, by="sim")
+res$method <- paste0(res$Method, " - ", res$strategy)
+metrics <- metrics[! apply(metrics, 1, function(x) any(is.na(x))), ]
+
+
+
+
+opt1 <- rep(0, nrow(res))
+opt1[res$hypothesis == "xy" & res$eff_x.y != 0 & res$P < 0.001] <- 1
+opt1[res$hypothesis == "yx" & res$P > 0.05] <- 1
+opt1[res$hypothesis == "xy" & res$eff_x.y == 0 & res$P > 0.05] <- 1
+table(opt1)
+
+
+rf2 <- make_optim_dataset(opt1, res, metrics, 14)
+pr2 <- test_predictor(rf2$rf, rf2$sp, res, metrics)
+
+res_rf2 <- add_method(rf2$rf, rf2$sp, res, metrics)
+eval_rf2 <- simeval(res_rf2)
+eval_rf2[[4]]
+
+save(rf2, res_rf2, pr2, eval_rf2, file="../results/rf2.rdata")
+
+
+res_lda1 <- add_method(lda1$rf, lda1$sp, res, metrics)
+eval_lda1 <- simeval(res_lda1)
+eval_lda1[[4]]
+
+
+opt2 <- as.factor(opt1)
+lda1 <- make_optim_dataset2(opt2, res, metrics, 2)
+prlda1 <- test_predictor(lda1$rf, lda1$sp, res, metrics)
+
+save(lda1, eval_lda1, file="../results/lda1.rdata")
+
+x <- lda1$rf
+save(x, file="temp.rdata")
+
+
+
+
+
+
+
+# Make new optim instead of bias - ratio of p(xy) / p(yx)
+
+temp <- filter(as.data.frame(res), eff_x.y != 0, strategy != "oracle") %>%
+	dplyr::select(Method, P, hypothesis, strategy, sim) %>%
+	spread(key=hypothesis, value=P) %>%
+	mutate(xy=-log10(xy), yx=-log10(yx)) %>%
+	as_data_frame
+
+temp$xy[is.infinite(temp$xy)] <- 300
+temp$yx[is.infinite(temp$yx)] <- 300
+temp$rat <- temp$xy / temp$yx
+
+group_by(temp, Method, strategy) %>%
+	summarise(rat=mean(xy / yx)) %>%
+	as.data.frame()
+
+temp2 <- group_by(temp, sim) %>%
+	summarise(meth=paste0(Method, " - ", strategy)[which.max(rat)][1])
+table(temp2$meth)
+
+
+
+```
+
+
+
+```{r}
+library(tidyverse)
+load("../results/simulate3-methods.rdata")
+load("../results/simulate3.rdata")
+load("../results/rf2.rdata")
+res <- inner_join(res, param, by="sim")
+res$method <- paste0(res$Method, " - ", res$strategy)
+metrics <- metrics[! apply(metrics, 1, function(x) any(is.na(x))), ]
+
+
+
+
+```
+

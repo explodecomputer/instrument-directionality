@@ -1,5 +1,5 @@
 library(TwoSampleMR)
-source("simulation-functions.r")
+source("fun-simulations.r")
 
 
 parameters <- init_parameters(nid=10000, nsnp_x=10, var_gx.x=0.1, var_x.y=0.1^2, nsnp_y=10, var_gy.y=0.1)

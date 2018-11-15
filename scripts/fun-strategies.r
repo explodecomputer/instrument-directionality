@@ -16,6 +16,8 @@ steiger_simple <- function(p_exp, p_out, n_exp, n_out)
 # - Remove x-y directionality
 # - Scan through confounders, identify new instruments evaluate directionality of u-x, evaluate if u causes x, if u causes x then do MR of all u instruments' effects on X against Y
 
+
+# This simulation 
 strategies_oracle <- function(ss)
 {
 	# For x on y
@@ -185,7 +187,7 @@ strategies_directionality <- function(ss, steiger_thresh=0.05)
 }
 
 # Scan through confounders, identify new instruments evaluate directionality of u-x, evaluate if u causes x, if u causes x then do MR of all u instruments' effects on X against Y
-
+# Still needs work
 strategies_spider <- function(ss, steiger_thresh=0.05)
 {
 	# For x on y

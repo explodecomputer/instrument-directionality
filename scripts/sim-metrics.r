@@ -1,5 +1,8 @@
 library(tidyverse)
 library(TwoSampleMR)
+source("fun-strategies.r")
+source("fun-simulations.r")
+
 
 Isq <- function(y,s)
 {
@@ -105,9 +108,6 @@ test_ss <- function(ss, i)
 	res <- best_model(res, p$eff_x.y)
 	return(list(res=res, parameters=p, validity=validity, metrics=metrics))
 }
-
-source("strategies.r")
-source("simulation-functions.r")
 
 ###
 

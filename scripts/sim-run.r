@@ -1,6 +1,6 @@
 library(TwoSampleMR)
 library(dplyr)
-source("simulation-functions.r")
+source("fun-simulations.r")
 
 
 arguments <- commandArgs(T)

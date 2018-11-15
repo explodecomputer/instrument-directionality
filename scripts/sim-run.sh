@@ -18,12 +18,12 @@ if [ -n "${1}" ]; then
 fi
 
 i=${PBS_ARRAYID}
-splits=100
+sims=100
 
 cd ${HOME}/repo/instrument-directionality/scripts
 
 Rscript \
-	simulate3.r \
+	sim-run.r \
 	${i} \
-	${splits} \
-	../results/simulate3_${i}.rdata
+	${sims} \
+	../results/scratch/sim_${i}.rdata
