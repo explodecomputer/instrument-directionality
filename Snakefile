@@ -5,7 +5,7 @@ LOGDIR = 'logs'
 
 [os.makedirs(x) for x in [OUTDIR, LOGDIR] if not os.path.exists(x)]
 
-SIMS = list(range(1,4))
+SIMS = list(range(1000-2000))
 SIMS_PER_RUN = 100
 
 
