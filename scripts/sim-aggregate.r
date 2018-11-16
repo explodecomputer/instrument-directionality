@@ -1,17 +1,20 @@
 library(dplyr)
 
-nom <- paste0("../results/simulate3_", 1:500, "-metrics.rdata")
+args <- commandArgs(T)
+input <- args[-length(args)]
+output <- args[length(args)]
+
 res <- list()
 metrics <- list()
 validity <- list()
 parameters <- list()
 param <- list()
-for(i in 1:length(nom))
+for(i in 1:length(input))
 {
-	if(file.exists(nom[i]))
+	if(file.exists(input[i]))
 	{
 		message(i)
-		load(nom[i])
+		load(input[i])
 		res[[i]] <- lapply(m, function(x) x$res) %>% bind_rows()
 		metrics[[i]] <- lapply(m, function(x) x$metrics) %>% bind_rows()
 		validity[[i]] <- lapply(m, function(x) x$validity) %>% bind_rows()
@@ -27,5 +30,5 @@ metrics <- bind_rows(metrics)
 validity <- bind_rows(validity)
 param <- bind_rows(param)
 
-save(res, metrics, validity, param, parameters, file="../results/simulate3.rdata")
+save(res, metrics, validity, param, parameters, file=output)
 

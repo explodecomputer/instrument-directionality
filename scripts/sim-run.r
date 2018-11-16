@@ -1,6 +1,6 @@
+library(simulateGP)
 library(TwoSampleMR)
 library(dplyr)
-source("fun-simulations.r")
 
 
 arguments <- commandArgs(T)
