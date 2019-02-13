@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=sims
-#SBATCH --array=501-1000
+#SBATCH --array=1001-1306
 #SBATCH --nodes=1 --cpus-per-task=1 --time=0-12:00:00
 #SBATCH --partition=mrcieu
 #SBATCH --output=job_reports/slurm-%A_%a.out

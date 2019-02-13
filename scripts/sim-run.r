@@ -13,11 +13,12 @@ message("running ", sims, " simulations")
 set.seed(jid)
 
 l <- list()
-j <- 1
-for(i in 1:sims)
+i <- 1
+while(i <= 100)
 {
-	k <- (jid - 1) * sims + i
-	message(i, " (", k, ")")
+	message(i)
+	id <- runif(1) %>% as.character %>% gsub("0.","",.) %>% paste0(jid, ":", .)
+
 	ss <- try(simulateGP::create_system(
 		nidx=sample(20000:500000, 1), 
 		nidy=sample(20000:500000, 1), 
@@ -37,10 +38,14 @@ for(i in 1:sims)
 		mu_gy.x=runif(1, -0.005, 0.005),
 		prop_gy.x=runif(1, 0, 1)
 	))
+
 	if(class(ss) != "try-error")
 	{
-		l[[j]] <- ss
-		j <- j + 1
+		l[[i]] <- ss
+		l[[i]]$estimates <- try(test_system(l[[i]], id))
+		l[[i]]$id <- id
+		names(l)[i] <- id
+		i <- i + 1
 	}
 }
 

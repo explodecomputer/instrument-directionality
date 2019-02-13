@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=sim3
-#SBATCH --array=1001-2000
+#SBATCH --array=1-500
 #SBATCH --nodes=1 --cpus-per-task=1 --time=0-12:00:00
 #SBATCH --partition=mrcieu
 #SBATCH --output=job_reports/slurm-%A_%a.out
@@ -25,5 +25,5 @@ Rscript \
         sim-run.r \
         ${i} \
         ${sims} \
-        ../results/sim3/simulate3_${i}.rdata
+        ../results/sim3/simulate3_${i}-metrics.rdata
 
