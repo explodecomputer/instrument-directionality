@@ -2,6 +2,7 @@ library(simulateGP)
 library(TwoSampleMR)
 library(dplyr)
 
+sessionInfo()
 
 arguments <- commandArgs(T)
 jid <- as.numeric(arguments[1])
@@ -17,7 +18,7 @@ for(i in 1:sims)
 {
 	k <- (jid - 1) * sims + i
 	message(i, " (", k, ")")
-	ss <- try(create_system(
+	ss <- try(simulateGP::create_system(
 		nidx=sample(20000:500000, 1), 
 		nidy=sample(20000:500000, 1), 
 		nidu=0, 

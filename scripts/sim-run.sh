@@ -4,7 +4,7 @@
 #PBS -o job_reports/inst-dir-output
 #PBS -e job_reports/inst-dir-error
 #PBS -l walltime=12:00:00
-#PBS -t 401-500
+#PBS -t 501-600
 #PBS -l nodes=1:ppn=1
 #PBS -S /bin/bash
 
@@ -26,4 +26,4 @@ Rscript \
 	sim-run.r \
 	${i} \
 	${sims} \
-	../results/scratch/sim_${i}.rdata
+	../results/sim3/simulate3_${i}.rdata
