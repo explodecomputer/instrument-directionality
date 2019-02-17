@@ -104,7 +104,7 @@ Define the performance of a method as its ability to detect true positives (sens
 First example: overall across all simulations how good are the methods at discriminating?
 
 ```{r}
-load("res.rdata")
+load("rocs.rdata")
 p1 <- ggplot(rocs, aes(x=method, y=auc, group=strategy, colour=strategy)) +
 geom_point(position=position_dodge(width=0.3)) +
 geom_errorbar(width=0, position=position_dodge(width=0.3), aes(ymin=ci_lo, ymax=ci_up)) +
@@ -163,7 +163,7 @@ info2 <- subset(info, !steiger_filtered & !outlier_filtered) %>% mutate(id=paste
 info2 <- inner_join(info2, plei, by=c("id"))
 out <- summary(lm(nonpl ~ ., subset(info2, select=-c(id.exposure, id.outcome, id, hypothesis, selection, steiger_filtered, outlier_filtered))))
 o <- out$coef %>% as_data_frame %>% 
-	mutate(var = rownames(out$coef), f=`t value`^2, rsq=f/(f+out$df[2]-df[3])) %>% slice(-1) %>%
+	mutate(var = rownames(out$coef), f=`t value`^2, rsq=f/(f+out$df[2]-2)) %>% slice(-1) %>%
 	arrange(desc(f))
 o$var <- as.factor(o$var)
 o$var <- factor(o$var, levels=as.character(o$var))
