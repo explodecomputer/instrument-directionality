@@ -1,7 +1,7 @@
 
 ```
 conda env create -f environment.yml
-conda activate r-simulations
+source activate r-simulations
 snakemake -pr -j 100 \
 --cluster-config bc4-cluster.json \
 --cluster "sbatch \

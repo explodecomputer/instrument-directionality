@@ -10,7 +10,75 @@ date: 15/06/2017
 
 library(tidyverse)
 source('../scripts/fun-analysis.r')
-load("../results/simulate3.rdata")
+load("../results/sim3.rdata")
+
+```
+
+Look at the parameter space of simulations covered
+
+Distribution of causal effects for x and y
+
+```{r}
+plot(param$nsnp_x, param$nsnp_y)
+
+```
+
+Variance explained in gx vs gy
+
+
+1. What is the probability of a method being the best, over varying levels of pleiotropy (or something else)
+	- e.g. make a plot which shows facet_x=plei, facet_y=something else, and x=outlier method and y=mean/median/mode, and then points being the size reflecting probability of a method being best
+2. How much can we explain the pleiotropy of a model using summary set metrics?
+
+```{r}
+plot(var_gx.x ~ var_gx.y, param)
+hist(param$prop_gx.y)
+```
+
+```{r}
+
+
+
+parameters[sapply(parameters, is.null)] <- NULL
+parameters <- lapply(parameters, function(x) 
+	{
+		x[sapply(x, is.null)] <- NULL
+		return(x)
+		})
+
+plei <- lapply(parameters[1:50], function(x)
+{
+	lapply(x, process_parameters) %>% bind_rows
+}) %>% bind_rows
+
+p <- group_by(plei, sim) %>%
+summarise(
+	nonpl = sum((eff_d / (eff_d + eff_p)) * (eff_d / sum(eff_d)))
+)
+
+ggplot(p, aes(x=nonpl)) +
+geom_density(aes(fill=grepl("x", sim)), alpha=0.5)
+
+p <- group_by(plei, sim, w=substr(SNP, 1,1)) %>%
+summarise(
+	nonpl = sum((eff_d / (eff_d + eff_p)) * (eff_d / sum(eff_d)))
+)
+
+ggplot(p, aes(x=nonpl)) +
+geom_density(aes(fill=grepl("x", sim)), alpha=0.5) +
+facet_grid(w ~ .)
+
+
+a$eff_p <- a$eff_p * 0.001
+
+g->u->y
+g->u->x
+
+g->x
+g->y
+
+
+
 
 res <- inner_join(res, param, by="sim")
 res$method <- paste0(res$Method, " - ", res$strategy)

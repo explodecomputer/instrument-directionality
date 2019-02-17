@@ -1,0 +1,81 @@
+
+```{r }
+library(tidyverse)
+load("../results/sim3/agg-instrument_validity.rdata")
+load("../results/sim3/agg-param.rdata")
+load("../results/sim3/agg-plei_summary.rdata")
+
+validity <- inner_join(instrument_validity, param, by="id")
+validity$strategy <- paste(validity$selection, validity$measure)
+validity$n <- validity$nidx
+validity$n[validity$hypothesis == "y"] <- validity$nidy[validity$hypothesis == "y"]
+validity$nbin <- cut(validity$n, breaks=10, labels=FALSE)
+plei <- plei_summary %>% group_by(id) %>% summarise(nonpl=sum(nonpl * effd / sum(effd)))
+validity$code <- paste0(validity$id, validity$hypothesis)
+validity <- inner_join(validity, plei, by=c("code"="id"))
+validity$pbin <- cut(validity$nonpl, breaks=5, labels=FALSE)
+
+validity_s <- group_by(validity, strategy, nbin) %>%
+	summarise(
+		n=sum(counts), 
+		direct=sum(counts[type=="valid"])/n,
+		confounder=sum(counts[type=="confounder"])/n,
+		reverse=sum(counts[type=="reverse"])/n
+	)
+validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
+validity_sl$nbin <- validity_sl$nbin * 50000
+
+ggplot(filter(validity_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
+geom_point(aes(colour=key)) +
+geom_line(aes(colour=key)) +
+facet_grid(. ~ strategy) +
+scale_colour_brewer(type="qual") +
+labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+ggsave("../images/steiger_validity_nbin.pdf", width=6, height=6)
+
+```
+
+Counts
+
+```{r}
+counts_s <- group_by(validity, strategy, nbin) %>%
+	summarise(
+		n=length(unique(paste(id, hypothesis))), 
+		direct=sum(counts[type=="valid"])/n,
+		confounder=sum(counts[type=="confounder"])/n,
+		reverse=sum(counts[type=="reverse"])/n
+	)
+counts_sl <- gather(counts_s, key=key, value=value, direct, confounder, reverse)
+counts_sl$nbin <- counts_sl$nbin * 50000
+ggplot(filter(counts_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
+geom_point(aes(colour=key)) +
+geom_line(aes(colour=key)) +
+facet_grid(. ~ strategy) +
+scale_colour_brewer(type="qual") +
+labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+```
+
+Stratify by pleiotropy level of the simulation. Higher values (1-5) indicate higher proportion of validity in the instruments
+
+```{r}
+counts_s <- group_by(validity, strategy, nbin, pbin) %>%
+	summarise(
+		n=length(unique(paste(id, hypothesis))), 
+		direct=sum(counts[type=="valid"])/n,
+		confounder=sum(counts[type=="confounder"])/n,
+		reverse=sum(counts[type=="reverse"])/n
+	)
+counts_sl <- gather(counts_s, key=key, value=value, direct, confounder, reverse)
+counts_sl$nbin <- counts_sl$nbin * 50000
+ggplot(filter(counts_sl, !grepl("^o", strategy), !grepl("nofilter", strategy), !is.na(pbin)), aes(x=nbin, y=value)) +
+geom_point(aes(colour=key)) +
+geom_line(aes(colour=key)) +
+facet_grid(pbin ~ strategy) +
+scale_colour_brewer(type="qual") +
+labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+```
+
+

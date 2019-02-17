@@ -4,14 +4,7 @@ args <- commandArgs(T)
 input_dir <- args[1]
 output <- args[2]
 
-input <- file.path(input_dir, list.files(input_dir, pattern="*metrics.rdata"))
-
-estimates <- list()
-info <- list()
-instrument_validity <- list()
-heterogeneity <- list()
-directional_pleiotropy <- list()
-param <- list()
+input <- file.path(input_dir, list.files(input_dir, pattern="sim_*")) %>% grep("sim_", ., value=TRUE)
 
 check_nulls <- function(l, node)
 {
@@ -39,7 +32,75 @@ aggregate <- function(l, node)
 	return(out)
 }
 
-for(i in 1:length(input))
+
+pleiotropy_metric <- function(x)
+{
+	a <- x$parameters
+	if(is.null(a)) return(NULL)
+
+	a$id <- x$id
+	instx <- data_frame(
+		id = paste0(a$id, "x"),
+		SNP = paste0("i", 1:length(a$eff_gx.x)),
+		eff_d = a$eff_gx.x^2,
+		eff_p = a$eff_gx.y^2
+	)
+	revx <- data_frame(
+		id = paste0(a$id, "x"),
+		SNP = paste0("r", 1:length(a$eff_gy.x)),
+		eff_d = a$eff_gy.x^2,
+		eff_p = a$eff_gy.y^2
+	)
+	insty <- data_frame(
+		id = paste0(a$id, "y"),
+		SNP = paste0("i", 1:length(a$eff_gy.y)),
+		eff_d = a$eff_gy.y^2,
+		eff_p = a$eff_gy.x^2
+	)
+	revy <- data_frame(
+		id = paste0(a$id, "y"),
+		SNP = paste0("r", 1:length(a$eff_gx.y)),
+		eff_d = a$eff_gx.y^2 + a$eff_gx.x^2 * a$eff_x.y^2,
+		eff_p = a$eff_gx.x^2
+	)
+	o <- bind_rows(instx, insty, revx, revy)
+	if(length(a$u) > 0)
+	{
+		confx <- data_frame(
+			id = paste0(a$id, "x"),
+			eff_d = lapply(a$u, function(x) (x$eff_u.x * x$eff_gu.u)^2) %>% unlist,
+			eff_p = lapply(a$u, function(x) (x$eff_u.y * x$eff_gu.u)^2) %>% unlist,
+		)
+		confx$SNP <- paste0("u", 1:nrow(confx))
+		confy <- data_frame(
+			id = paste0(a$id, "y"),
+			eff_d = lapply(a$u, function(x) (x$eff_u.y * x$eff_gu.u)^2) %>% unlist,
+			eff_p = lapply(a$u, function(x) (x$eff_u.x * x$eff_gu.u)^2) %>% unlist,
+		)
+		confy$SNP <- paste0("u", 1:nrow(confy))
+		o <- bind_rows(o, confx, confy)
+	}
+	o <- group_by(o, id, w=substr(SNP, 1,1)) %>%
+	summarise(
+		nonpl = sum((eff_d / (eff_d + eff_p)) * (eff_d / sum(eff_d))),
+		effd = sum(eff_d)
+	)
+
+	return(o)
+}
+
+
+estimates <- list()
+info <- list()
+instrument_validity <- list()
+heterogeneity <- list()
+directional_pleiotropy <- list()
+param <- list()
+parameters <- list()
+plei_summary <- list()
+
+# mclapply(1:length(input), function(i)
+for(i in 1:10)
 {
 	if(file.exists(input[i]))
 	{
@@ -62,6 +123,18 @@ for(i in 1:length(input))
 			as_data_frame(x$parameters[c("eff_x.y", "nsnp_x", "nsnp_y", "var_gx.x", "var_gy.y", "var_gx.y", "var_gy.x", "prop_gx.y", "prop_gy.x", "mu_gx.y", "mu_gy.x")]) %>% 
 			mutate(id = x$id, nidx = x$x$x$n[1], nidy = x$y$y$n[1])
 		}) %>% bind_rows()
+
+		parameters[sapply(parameters, is.null)] <- NULL
+		parameters <- lapply(parameters, function(x) {
+			x[sapply(x, is.null)] <- NULL
+			return(x)
+		})
+
+		plei_summary[[i]] <- lapply(l, function(x) pleiotropy_metric(x)) %>% bind_rows
+		parameters[[i]] <- lapply(l, function(x) {
+			x$parameters$id <- x$id
+			x$parameters
+		})
 	}
 }
 
@@ -71,8 +144,9 @@ instrument_validity <- bind_rows(instrument_validity)
 heterogeneity <- bind_rows(heterogeneity)
 directional_pleiotropy <- bind_rows(directional_pleiotropy)
 param <- bind_rows(param)
+plei_summary <- bind_rows(plei_summary)
 
-save(estimates, info, instrument_validity, heterogeneity, directional_pleiotropy, param, file=output)
+save(estimates, info, instrument_validity, heterogeneity, directional_pleiotropy, param, plei_summary, parameters, file=output)
 
 
 

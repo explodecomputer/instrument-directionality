@@ -1,39 +1,33 @@
 
 simeval <- function(res)
 {
+
 	require(tidyverse)
 	require(ggrepel)
 
-	res$Method <- res$method
-
 	# Organise data
-	resnull <- bind_rows(
-		filter(res, hypothesis=="xy", eff_x.y == 0),
-		filter(res, hypothesis=="yx")
-	)
-	resnull_s_d <- group_by(resnull, Method, strategy, hypothesis) %>%
-		summarise(fdr = sum(P < 0.05)/n())
+	resnull_s_d <- group_by(resnull, method, strategy, hypothesis) %>%
+		summarise(fdr = sum(pval < 0.05)/n())
 	levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
 
-	resnull_s <- group_by(resnull, Method, strategy) %>%
-		summarise(fdr = sum(P < 0.05)/n())
+	resnull_s <- group_by(resnull, method, strategy) %>%
+		summarise(fdr = sum(pval < 0.05)/n())
 
-	resxy <- filter(res, hypothesis == "xy", eff_x.y != 0)
 	resxy$eff_bin <- cut(resxy$eff_x.y, 3)
 
-	resxy_s <- group_by(resxy, Method, strategy, eff_bin) %>%
-		summarise(tdr=sum(P < 0.05)/n(), bias=mean(Estimate - eff_x.y), n=n(), bias_se=sd(Estimate - eff_x.y)/sqrt(n))
+	resxy_s <- group_by(resxy, method, strategy, eff_bin) %>%
+		summarise(tdr=sum(pval < 0.05)/n(), bias=mean(b - eff_x.y), n=n(), bias_se=sd(b - eff_x.y)/sqrt(n))
 
 
 
 	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
+		group_by(method, strategy) %>%
+		summarise(power=sum(pval < 0.01)/n())
 	# temp <- inner_join(temp, meth, by="Method")
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_power <- ggplot(temp, aes(y=power, x=Method)) +
+	p_power <- ggplot(temp %>% filter(!grepl("^o", strategy)), aes(y=power, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
 		scale_colour_brewer(type="qual") +
@@ -46,7 +40,7 @@ simeval <- function(res)
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_fdr <- ggplot(temp, aes(y=fdr, x=Method)) +
+	p_fdr <- ggplot(temp %>% filter(!grepl("^o", strategy)), aes(y=fdr, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
 		scale_colour_brewer(type="qual") +
@@ -54,8 +48,8 @@ simeval <- function(res)
 
 
 	temp1 <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
+		group_by(method, strategy) %>%
+		summarise(power=sum(pval < 0.01)/n())
 	# temp1 <- inner_join(temp1, meth, by="Method")
 	# temp1$Method <- as.factor(temp1$Method)
 	# temp1$Method <- factor(temp1$Method, levels=as.character(meth$Method))
@@ -65,24 +59,22 @@ simeval <- function(res)
 	# temp2$Method <- as.factor(temp2$Method)
 	# temp2$Method <- factor(temp2$Method, levels=as.character(meth$Method))
 
-	temp <- merge(temp1, temp2, by=c("Method", "strategy"))
-	temp$meth2 <- paste0(temp$Method, " - ", temp$strategy)
-	p_powerfdr <- ggplot(subset(temp, strategy != "oracle"), aes(x=power, y=fdr)) +
+	temp <- merge(temp1, temp2, by=c("method", "strategy"))
+	temp$meth2 <- paste0(temp$method, " - ", temp$strategy)
+	p_powerfdr <- ggplot(subset(temp, !grepl("^o", strategy)), aes(x=power, y=fdr)) +
 		geom_point(aes(colour=strategy), size=3) +
-		geom_text_repel(aes(label=Method)) +
+		geom_text_repel(aes(label=method)) +
 		scale_colour_brewer(type="qual") +
 		labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
 
-
-
 	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(bias=mean(Estimate - eff_x.y), se=sd(Estimate-eff_x.y))
+		group_by(method, strategy) %>%
+		summarise(bias=mean(b - eff_x.y), se=sd(b-eff_x.y))
 	# temp <- inner_join(temp, meth, by="Method")
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_bias <- ggplot(temp, aes(y=bias, x=Method)) +
+	p_bias <- ggplot(temp %>% filter(!method %in% c("Steiger null", "Wald ratio"), !grepl("^o", strategy)), aes(y=bias, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
@@ -92,6 +84,55 @@ simeval <- function(res)
 	return(list(p_power=p_power, p_fdr=p_fdr, p_powerfdr=p_powerfdr, p_bias=p_bias))
 
 }
+
+
+# method's -log10 p-value
+
+x <- pROC::roc(rbinom(100, 1, 0.5), rnorm(100))$auc[1]
+
+res$causal <- as.numeric(res$hypothesis == "x" & res$eff_x.y != 0)
+
+rocs <- group_by(res, method, strategy) %>%
+summarise(n=n(), auc=pROC::roc(causal, abs(b/se))$auc[1])
+
+ggplot(rocs %>% filter(!grepl("^o", strategy)), aes(x=method, y=auc)) +
+geom_point(aes(colour=strategy)) +
+theme(axis.text.x=element_text(angle=90)) +
+scale_colour_brewer(type="qual")
+
+
+
+rocs2 <- group_by(subset(res, !is.na(pbin)), method, strategy, nsnpbin, pbin) %>%
+summarise(n=n(), auc=pROC::roc(causal, abs(b/se))$auc[1])
+
+ggplot(rocs2 %>% filter(!grepl("^o", strategy)), aes(x=method,y=auc)) +
+geom_point(aes(colour=strategy)) +
+facet_grid(pbin ~ nsnpbin) +
+theme(axis.text.x=element_text(angle=90)) +
+scale_colour_brewer(type="qual")
+
+
+a <- subset(rocs2, nbin==nbin[1] & pbin2 == pbin2[1])
+
+x <- ungroup(rocs2) %>% 
+filter(!grepl("^o", strategy), !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
+arrange(desc(auc)) %>% 
+slice(1)
+
+y <- ungroup(rocs2) %>% 
+filter(!grepl("^o", strategy), !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
+arrange(desc(auc)) %>% 
+mutate(rank=1:n())
+y[y$rank == 1,] %$% table(method, strategy)
+
+
+
+
+y <- ungroup(rocs2) %>% 
+filter(strategy == "e 1 0", !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
+arrange(desc(auc)) %>% 
+mutate(rank=1:n())
+
 
 
 make_optim_dataset <- function(optvec, res, metrics, ncores)
