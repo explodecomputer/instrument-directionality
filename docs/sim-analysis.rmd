@@ -82,7 +82,7 @@ table(temp$pval < 0.05)
 
 What is the relationship between isq and simulated levels of pleiotropy?
 
-```{r}
+```{r dev="png"}
 plei <- group_by(plei_summary, id) %>%
 	summarise(nonpl = sum(nonpl * effd / sum(effd)))
 
@@ -112,6 +112,7 @@ theme(axis.text.x=element_text(angle=90)) +
 scale_colour_brewer(type="qual") +
 labs(colour="Selection") +
 theme(axis.text.x=element_text(hjust=1, vjust=0.5))
+p1
 ggsave(p1, file="../images/rocs1.pdf")
 ```
 
@@ -132,6 +133,7 @@ facet_grid(pbin ~ nsnpbin) +
 theme(axis.text.x=element_text(angle=90)) +
 scale_colour_brewer(type="qual") +
 labs(colour="Selection", shape="Best")
+p1
 ggsave(p1, file="../images/rocs2.pdf")
 ```
 
@@ -167,11 +169,13 @@ o <- out$coef %>% as_data_frame %>%
 	arrange(desc(f))
 o$var <- as.factor(o$var)
 o$var <- factor(o$var, levels=as.character(o$var))
-ggplot(o, aes(x=var, y=cumsum(rsq*out$r.squared/sum(rsq)))) +
+p1 <- ggplot(o, aes(x=var, y=cumsum(rsq*out$r.squared/sum(rsq)))) +
 geom_point(stat="identity") +
 theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5)) +
 ylim(0, out$r.squared) +
 labs(y="Partial r-squared", x="Metric")
+p1
+ggsave(p1, file="../images/info_plei.pdf")
 ```
 
 The metrics have an explanatory power adjusted r-square of `r out$r.squared` of the pleiotropic value of the simulations. This opens the possibility that the summary stats themselves can explain a substantial proportion of the variance, and therefore be predictive of the model to use.
