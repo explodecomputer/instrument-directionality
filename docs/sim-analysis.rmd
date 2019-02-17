@@ -11,7 +11,6 @@ suppressPackageStartupMessages({
 	library(pROC)
 	library(tidyverse)
 	library(ggrepel)
-	library(multidplyr)
 })
 opts_chunk$set(cache=FALSE, echo=TRUE, message=FALSE, warning=FALSE)
 ```
@@ -106,62 +105,19 @@ First example: overall across all simulations how good are the methods at discri
 
 ```{r}
 load("res.rdata")
-cluster <- create_cluster(11)
-set_default_cluster(cluster)
-
-rocs <- res %>% filter(selection == "e") %>% 
-partition(method, strategy) %>%
-cluster_library("pROC") %>%
-cluster_library("dplyr") %>%
-do({
-	r <- pROC::roc(.$causal, abs(.$b/.$se), ci=TRUE)
-	tibble(
-		n=nrow(.), 
-		auc=r$auc[1],
-		ci_lo=r$ci[1],
-		ci_up=r$ci[3]
-	)
-})
-
-rocs <- as_data_frame(rocs)
-rocs$strategy[rocs$strategy == "e 0 0"] <- "Tophits"
-rocs$strategy[rocs$strategy == "e 1 0"] <- "DF"
-rocs$strategy[rocs$strategy == "e 0 1"] <- "HF"
-rocs$strategy[rocs$strategy == "e 1 1"] <- "DF + HF"
-rocs$method <- factor(rocs$method)
-rocs$method <- factor(rocs$method, levels=levels(rocs$method)[c(7,2,6,1,5,8,10,3,9,11,4)])
-ggplot(rocs, aes(x=method, y=auc, group=strategy, colour=strategy)) +
+p1 <- ggplot(rocs, aes(x=method, y=auc, group=strategy, colour=strategy)) +
 geom_point(position=position_dodge(width=0.3)) +
 geom_errorbar(width=0, position=position_dodge(width=0.3), aes(ymin=ci_lo, ymax=ci_up)) +
 theme(axis.text.x=element_text(angle=90)) +
 scale_colour_brewer(type="qual") +
 labs(colour="Selection") +
 theme(axis.text.x=element_text(hjust=1, vjust=0.5))
+ggsave(p1, file="../images/rocs1.pdf")
 ```
 
 Now calculate AUROC for different classes of simulation
 
 ```{r}
-rocs2 <- res %>% filter(selection == "e") %>%
-partition(method, strategy, nsnpbin, pbin) %>%
-cluster_library("pROC") %>%
-do({
-	r <- pROC::roc(.$causal, abs(.$b/.$se), ci=TRUE)
-	tibble(
-		n=nrow(.), 
-		auc=r$auc[1],
-		ci_lo=r$ci[1],
-		ci_up=r$ci[3]
-	)
-})
-rocs2 <- as_data_frame(rocs2)
-rocs2$strategy[rocs2$strategy == "e 0 0"] <- "Tophits"
-rocs2$strategy[rocs2$strategy == "e 1 0"] <- "DF"
-rocs2$strategy[rocs2$strategy == "e 0 1"] <- "HF"
-rocs2$strategy[rocs2$strategy == "e 1 1"] <- "DF + HF"
-rocs2$method <- factor(rocs2$method)
-rocs2$method <- factor(rocs2$method, levels=levels(rocs2$method)[c(7,2,6,1,5,8,10,3,9,11,4)])
-
 x <- rocs2 %>% 
 group_by(nsnpbin, pbin) %>% 
 arrange(desc(auc)) %>% 
@@ -170,12 +126,13 @@ slice(1)
 rocs2$top <- FALSE
 rocs2$top[paste(rocs2$method, rocs2$strategy, rocs2$pbin, rocs2$nsnpbin) %in% paste(x$method, x$strategy, x$pbin, x$nsnpbin)] <- TRUE
 
-ggplot(rocs2, aes(x=method, y=auc, group=strategy, colour=strategy, shape=top)) +
+p1 <- ggplot(rocs2, aes(x=method, y=auc, group=strategy, colour=strategy, shape=top)) +
 geom_point() +
 facet_grid(pbin ~ nsnpbin) +
 theme(axis.text.x=element_text(angle=90)) +
 scale_colour_brewer(type="qual") +
 labs(colour="Selection", shape="Best")
+ggsave(p1, file="../images/rocs2.pdf")
 ```
 
 Can we demonstrate that across different simulation scenarios there are different methods that perform most accurately, thereby necessitating some automated way of choosing the most reliable method?
