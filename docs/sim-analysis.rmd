@@ -4,6 +4,18 @@ author: Gibran Hemani
 date: 15/06/2017
 ---
 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+suppressPackageStartupMessages({
+	library(knitr)
+	library(pROC)
+	library(tidyverse)
+	library(ggrepel)
+	library(multidplyr)
+})
+opts_chunk$set(cache=FALSE, echo=TRUE, message=FALSE, warning=FALSE)
+```
+
 Approximately 200,000 simulations have been performed of x associating with y, simulating different samples for x and y phenotypes and extracting the relevant SNPs from each to make a 2-sample MR analysis. Simulations are performed with the following variables. The causal and reverse causal effects were estimated using Rucker, median and mode estimators
 
 - Sample size of x and y
@@ -21,331 +33,190 @@ Approximately 200,000 simulations have been performed of x associating with y, s
 
 Instruments for each MR test were selected either by
 
-- Oracle (true instruments only)
 - Top hits (significant hits for the exposure)
-- Steiger (significant hits for the exposure that have Rsq > outcome)
+- Steiger (rsq snp-exposure > rsq snp-outcome)
+- Heterogeneity outliers (Qpval > 0.05)
+- Steiger and then heterogeneity
 
 Then the following tests were performed
 
-- Rucker + rucker JK
-- Median
-- Mode
+- Mean (simple, ivw fe, egger fe, ivw re, egger re)
+- Median (simple, weighted, penalised)
+- Mode (simple, weighted, penalised)
+
+This gives 44 methods in total.
+
+## Simulations
+
+A broad range of simulations are performed, where instruments are a mixture of direct effects (with pleiotropic effects on y), reverse effects (with pleiotropic effects on x) and confounder effects that act through u on x and y. If we break down the proportion of a SNP's effect that is valid (i.e. for all effects on x and y, what proportion is acting on x), for only detected variants in a simulation - this is what it looks like
+
+
+```{r}
+load("../results/sim3/agg-plei_summary.rdata")
+ggplot(plei_summary, aes(x=nonpl)) +
+geom_density(aes(fill=grepl("x", id)), alpha=0.5) +
+facet_grid(w ~ .)
+```
+
+Note that for analyses of y on x the level of pleiotropy is slightly higher because there is a set of SNPs that influence x, which influences y. The only way that reverse causal SNPs can arise for x is if they have pleiotropic effects.
+
+
+These are the distributions of estimated heterogeneity Isq from the simulations
+
+```{r}
+load("../results/sim3/agg-heterogeneity.rdata")
+load("../results/sim3/agg-plei_summary.rdata")
+
+temp <- subset(heterogeneity, method == "IVW" & !steiger_filtered & !outlier_filtered & selection == "o")
+
+temp$isq <- (temp$Q - temp$df -1) / temp$Q
+temp <- subset(temp, isq >= 0)
+hist(temp$isq)
+```
+
+Are there many simulations with low heterogeneity?
+
+```{r}
+table(temp$pval < 0.05)
+
+```
+
+What is the relationship between isq and simulated levels of pleiotropy?
+
+```{r}
+plei <- group_by(plei_summary, id) %>%
+	summarise(nonpl = sum(nonpl * effd / sum(effd)))
+
+temp$id <- paste0(temp$id, temp$hypothesis)
+temp <- inner_join(temp, plei, by="id")
+
+summary(lm(nonpl ~ isq, temp))
+
+ggplot(temp, aes(x=nonpl, y=isq)) +
+geom_point() +
+geom_smooth()
+
+```
 
 ## Analysis
 
-```{r }
-library(tidyverse)
-load("../results/simulate3.rdata")
+Define the performance of a method as its ability to detect true positives (sensitivity) and true negatives (specificity). Estimate AUROC for each method / strategy combination. Hypothesis is that under different circumstances different methods will perform better or worse.
 
-res <- inner_join(res, param, by="sim")
-validity <- inner_join(validity, param, by="sim")
+First example: overall across all simulations how good are the methods at discriminating?
 
-# meth <- data_frame(Method=unique(res$Method))
-# meth$root <- c(rep("Mean", 7), rep("Mode", 4), rep("Median", 3))
-# res <- inner_join(res, meth, by="Method")
+```{r}
+load("res.rdata")
+cluster <- create_cluster(11)
+set_default_cluster(cluster)
 
-# resnull <- bind_rows(
-# 	filter(res, hypothesis=="xy", eff_x.y == 0),
-# 	filter(res, hypothesis=="yx")
-# )
-
-# resnull_s_d <- group_by(resnull, Method, strategy, hypothesis) %>%
-# 	summarise(fdr = sum(P < 0.05)/n())
-# levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
-
-# resnull_s <- group_by(resnull, Method, strategy) %>%
-# 	summarise(fdr = sum(P < 0.05)/n())
-
-# resxy <- filter(res, hypothesis == "xy", eff_x.y != 0)
-# resxy$eff_bin <- cut(resxy$eff_x.y, 3)
-
-# resxy_s <- group_by(resxy, Method, strategy, eff_bin) %>%
-# 	summarise(tdr=sum(P < 0.05)/n(), bias=mean(Estimate - eff_x.y), n=n(), bias_se=sd(Estimate - eff_x.y)/sqrt(n))
-
-
-
-
-
-
-# function to make main plots
-
-simeval <- function(res)
-{
-
-	# res$Method <- paste0(res$Method, " - ", res$strategy)
-
-	require(tidyverse)
-	require(ggrepel)
-
-	# Organise data
-	resnull <- bind_rows(
-		filter(res, hypothesis=="xy", eff_x.y == 0),
-		filter(res, hypothesis=="yx")
+rocs <- res %>% filter(selection == "e") %>% 
+partition(method, strategy) %>%
+cluster_library("pROC") %>%
+cluster_library("dplyr") %>%
+do({
+	r <- pROC::roc(.$causal, abs(.$b/.$se), ci=TRUE)
+	tibble(
+		n=nrow(.), 
+		auc=r$auc[1],
+		ci_lo=r$ci[1],
+		ci_up=r$ci[3]
 	)
-	resnull_s_d <- group_by(resnull, Method, strategy, hypothesis) %>%
-		summarise(fdr = sum(P < 0.05)/n())
-	levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
+})
 
-	resnull_s <- group_by(resnull, Method, strategy) %>%
-		summarise(fdr = sum(P < 0.05)/n())
-
-	resxy <- filter(res, hypothesis == "xy", eff_x.y != 0)
-	resxy$eff_bin <- cut(resxy$eff_x.y, 3)
-
-	resxy_s <- group_by(resxy, Method, strategy, eff_bin) %>%
-		summarise(tdr=sum(P < 0.05)/n(), bias=mean(Estimate - eff_x.y), n=n(), bias_se=sd(Estimate - eff_x.y)/sqrt(n))
-
-
-
-	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
-	# temp <- inner_join(temp, meth, by="Method")
-	# temp$Method <- as.factor(temp$Method)
-	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-	p_power <- ggplot(temp, aes(y=power, x=Method)) +
-		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-		scale_colour_brewer(type="qual") +
-		labs(colour="Instrument\nselection")
-
-
-
-	temp <- resnull_s
-	# temp <- inner_join(temp, meth, by="Method")
-	# temp$Method <- as.factor(temp$Method)
-	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-	p_fdr <- ggplot(temp, aes(y=fdr, x=Method)) +
-		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-		scale_colour_brewer(type="qual") +
-		labs(colour="Instrument\nselection")
-
-
-	temp1 <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
-	# temp1 <- inner_join(temp1, meth, by="Method")
-	# temp1$Method <- as.factor(temp1$Method)
-	# temp1$Method <- factor(temp1$Method, levels=as.character(meth$Method))
-
-	temp2 <- resnull_s
-	# temp2 <- inner_join(temp2, meth, by="Method")
-	# temp2$Method <- as.factor(temp2$Method)
-	# temp2$Method <- factor(temp2$Method, levels=as.character(meth$Method))
-
-	temp <- merge(temp1, temp2, by=c("Method", "strategy"))
-	temp$meth2 <- paste0(temp$Method, " - ", temp$strategy)
-	p_powerfdr <- ggplot(subset(temp, strategy != "oracle"), aes(x=power, y=fdr)) +
-		geom_point(aes(colour=strategy), size=3) +
-		geom_text_repel(aes(label=Method)) +
-		scale_colour_brewer(type="qual") +
-		labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
-
-
-
-	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(bias=mean(Estimate - eff_x.y), se=sd(Estimate-eff_x.y))
-	# temp <- inner_join(temp, meth, by="Method")
-	# temp$Method <- as.factor(temp$Method)
-	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-	p_bias <- ggplot(temp, aes(y=bias, x=Method)) +
-		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-		geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
-		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-		scale_colour_brewer(type="qual") +
-		labs(colour="Instrument\nselection")
-
-	return(list(p_power=p_power, p_fdr=p_fdr, p_powerfdr=p_powerfdr, p_bias=p_bias))
-
-}
-
-
-
-a <- simeval(res)
-a[[1]]
-ggsave("../images/steiger_pow.pdf", width=6, height=3)
-a[[2]]
-ggsave("../images/steiger_fdr.pdf", width=6, height=3)
-a[[3]]
-a[[4]]
-```
-
-
-Is Steiger finding better instruments?
-
-```{r }
-
-validity$n <- validity$nidx
-validity$n[validity$hypothesis == "yx"] <- validity$nidy[validity$hypothesis == "yx"]
-
-validity$nbin <- cut(validity$n, breaks=10, labels=FALSE)
-
-validity_s <- group_by(validity, strategy, nbin) %>%
-	summarise(
-		n=sum(value), 
-		direct=sum(value[type=="valid"])/n,
-		confounder=sum(value[type=="confounder"])/n,
-		reverse=sum(value[type=="reverse"])/n
-	)
-validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
-save(validity_sl, file="validity.rdata")
-
-ggplot(filter(validity_sl, strategy != "oracle"), aes(x=strategy, y=value)) +
-geom_bar(stat="identity", position="dodge", aes(fill=key)) +
-scale_fill_brewer(type='qual') +
-labs(y="Proportion of instruments", fill="SNP association") +
-geom_text(aes(y=value+0.04, label=round(value, 2), fill=key), position=position_dodge(width=0.9)) +
-theme(axis.text.y=element_blank(), axis.ticks=element_blank())
-ggsave("../images/steiger_validity.pdf", width=6, height=6)
-```
-
-validity_sl$nbin <- validity_sl$nbin * 50000
-
-ggplot(filter(validity_sl, strategy != "oracle"), aes(x=nbin, y=value)) +
-geom_point(aes(colour=key)) +
-geom_line(aes(colour=key)) +
-facet_grid(. ~ strategy) +
+rocs <- as_data_frame(rocs)
+rocs$strategy[rocs$strategy == "e 0 0"] <- "Tophits"
+rocs$strategy[rocs$strategy == "e 1 0"] <- "DF"
+rocs$strategy[rocs$strategy == "e 0 1"] <- "HF"
+rocs$strategy[rocs$strategy == "e 1 1"] <- "DF + HF"
+rocs$method <- factor(rocs$method)
+rocs$method <- factor(rocs$method, levels=levels(rocs$method)[c(7,2,6,1,5,8,10,3,9,11,4)])
+ggplot(rocs, aes(x=method, y=auc, group=strategy, colour=strategy)) +
+geom_point(position=position_dodge(width=0.3)) +
+geom_errorbar(width=0, position=position_dodge(width=0.3), aes(ymin=ci_lo, ymax=ci_up)) +
+theme(axis.text.x=element_text(angle=90)) +
 scale_colour_brewer(type="qual") +
-labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
-theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
-ggsave("../images/steiger_validity_nbin.pdf", width=6, height=6)
+labs(colour="Selection") +
+theme(axis.text.x=element_text(hjust=1, vjust=0.5))
+```
 
+Now calculate AUROC for different classes of simulation
 
+```{r}
+rocs2 <- res %>% filter(selection == "e") %>%
+partition(method, strategy, nsnpbin, pbin) %>%
+cluster_library("pROC") %>%
+do({
+	r <- pROC::roc(.$causal, abs(.$b/.$se), ci=TRUE)
+	tibble(
+		n=nrow(.), 
+		auc=r$auc[1],
+		ci_lo=r$ci[1],
+		ci_up=r$ci[3]
+	)
+})
+rocs2 <- as_data_frame(rocs2)
+rocs2$strategy[rocs2$strategy == "e 0 0"] <- "Tophits"
+rocs2$strategy[rocs2$strategy == "e 1 0"] <- "DF"
+rocs2$strategy[rocs2$strategy == "e 0 1"] <- "HF"
+rocs2$strategy[rocs2$strategy == "e 1 1"] <- "DF + HF"
+rocs2$method <- factor(rocs2$method)
+rocs2$method <- factor(rocs2$method, levels=levels(rocs2$method)[c(7,2,6,1,5,8,10,3,9,11,4)])
 
+x <- rocs2 %>% 
+group_by(nsnpbin, pbin) %>% 
+arrange(desc(auc)) %>% 
+slice(1)
 
+rocs2$top <- FALSE
+rocs2$top[paste(rocs2$method, rocs2$strategy, rocs2$pbin, rocs2$nsnpbin) %in% paste(x$method, x$strategy, x$pbin, x$nsnpbin)] <- TRUE
 
-How does each method perform in terms of finding true positives?
+ggplot(rocs2, aes(x=method, y=auc, group=strategy, colour=strategy, shape=top)) +
+geom_point() +
+facet_grid(pbin ~ nsnpbin) +
+theme(axis.text.x=element_text(angle=90)) +
+scale_colour_brewer(type="qual") +
+labs(colour="Selection", shape="Best")
+```
 
-```{r }
+Can we demonstrate that across different simulation scenarios there are different methods that perform most accurately, thereby necessitating some automated way of choosing the most reliable method?
 
+```{r}
 
-a[[1]]
-
-# ## ---- Power ----
-
-# temp <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(power=sum(P < 0.01)/n())
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-# ggplot(temp, aes(y=power, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
-
-
-# ggplot(resxy_s, aes(x=eff_bin, y=tdr, group=strategy)) +
-# geom_point(aes(colour=strategy)) +
-# geom_line(aes(colour=strategy)) +
-# facet_wrap(~ Method) +
-# scale_colour_brewer(type="qual") +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5))
-
+y <- rocs2 %>% as_data_frame() %>%
+group_by(nsnpbin, pbin) %>% 
+arrange(desc(auc)) %>% 
+mutate(rank=1:n(), method=as.factor(method))
+y[y$rank == 1,] %>% {table(.$method, .$strategy)}
 
 ```
 
-
-False discovery rates of each method
-
-```{r }
+We find that `r length(y[y$rank == 1,] %>% {table(.$strategy)})` out of `r length(unique(rocs2$strategy))` instrument selection strategies appear in the list of top performing methods, and `r sum(y[y$rank == 1,] %>% {table(.$method)} != 0)` of the `r length(unique(rocs2$method))` methods also.
 
 
-a[[2]]
+## Summary set metrics
 
-# temp <- resnull_s
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
+Can the summary set metrics predict the pleiotropy of a model?
 
-# ggplot(temp, aes(y=fdr, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
+```{r}
+load("../results/sim3/agg-info.rdata")
+info <- subset(info, selection == "e")
 
+info2 <- subset(info, !steiger_filtered & !outlier_filtered) %>% mutate(id=paste0(id, hypothesis))
 
-# temp <- resnull_s
-# temp <- inner_join(temp, meth, by="Method")
-# temp <- temp[order(temp$fdr), ]
-# temp$meth2 <- as.factor(paste0(temp$Method, " - ", temp$strategy))
-# temp$meth2 <- factor(temp$meth2, levels=as.character(unique(temp$meth2)))
-
-# ggplot(subset(temp, strategy != "oracle"), aes(x=meth2, y=fdr)) +
-# geom_bar(stat="identity", position="dodge", aes(fill=root, alpha=strategy)) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_fill_brewer(type="qual") +
-# geom_hline(yintercept=0.05, linetype="dotted")
-
+info2 <- inner_join(info2, plei, by=c("id"))
+out <- summary(lm(nonpl ~ ., subset(info2, select=-c(id.exposure, id.outcome, id, hypothesis, selection, steiger_filtered, outlier_filtered))))
+o <- out$coef %>% as_data_frame %>% 
+	mutate(var = rownames(out$coef), f=`t value`^2, rsq=f/(f+out$df[2]-df[3])) %>% slice(-1) %>%
+	arrange(desc(f))
+o$var <- as.factor(o$var)
+o$var <- factor(o$var, levels=as.character(o$var))
+ggplot(o, aes(x=var, y=cumsum(rsq*out$r.squared/sum(rsq)))) +
+geom_point(stat="identity") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5)) +
+ylim(0, out$r.squared) +
+labs(y="Partial r-squared", x="Metric")
 ```
 
-FDR vs Power for each method
-
-```{r }
-
-a[[3]]
-
-# library(ggrepel)
-
-# temp1 <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(power=sum(P < 0.01)/n())
-# temp1 <- inner_join(temp1, meth, by="Method")
-# temp1$Method <- as.factor(temp1$Method)
-# temp1$Method <- factor(temp1$Method, levels=as.character(meth$Method))
-
-# temp2 <- resnull_s
-# temp2 <- inner_join(temp2, meth, by="Method")
-# temp2$Method <- as.factor(temp2$Method)
-# temp2$Method <- factor(temp2$Method, levels=as.character(meth$Method))
-
-# temp <- merge(temp1, temp2, by=c("Method", "strategy"))
-# temp$meth2 <- paste0(temp$Method, " - ", temp$strategy)
-# ggplot(subset(temp, strategy != "oracle"), aes(x=power, y=fdr)) +
-# geom_point(aes(colour=strategy), size=3) +
-# geom_text_repel(aes(label=Method)) +
-# scale_colour_brewer(type="qual") +
-# labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
-
-```
-
-How biased is each method for simulations where there is a real causal effect?
-
-```{r }
-
-a[[4]]
-
-# temp <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(bias=mean(Estimate - eff_x.y), se=sd(Estimate-eff_x.y))
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-# ggplot(temp, aes(y=bias, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
-
-
-# ggplot(resxy_s, aes(x=eff_bin, y=bias, group=strategy)) +
-# geom_point(aes(colour=strategy)) +
-# geom_errorbar(aes(ymin=bias-bias_se*1.96, ymax=bias+bias_se*1.96, colour=strategy), width=0) +
-# geom_line(aes(colour=strategy)) +
-# facet_wrap(~ Method) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual")
-
-```
-
+The metrics have an explanatory power adjusted r-square of `r out$r.squared` of the pleiotropic value of the simulations. This opens the possibility that the summary stats themselves can explain a substantial proportion of the variance, and therefore be predictive of the model to use.
 
 
