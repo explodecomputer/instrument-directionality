@@ -1,6 +1,22 @@
+---
+title: Evaluate how instrument selection approaches perform in excluding invalid instruments
+author: Gibran Hemani
+---
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+	library(knitr)
+	library(dplyr)
+	library(tidyr)
+	library(ggplot2)
+	library(gridExtra)
+})
+opts_chunk$set(cache=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache.lazy=FALSE)
+```
+
+Wrangle data
 
 ```{r }
-library(tidyverse)
 load("../results/sim3/agg-instrument_validity.rdata")
 load("../results/sim3/agg-param.rdata")
 load("../results/sim3/agg-plei_summary.rdata")
@@ -15,6 +31,14 @@ validity$code <- paste0(validity$id, validity$hypothesis)
 validity <- inner_join(validity, plei, by=c("code"="id"))
 validity$pbin <- cut(validity$nonpl, breaks=5, labels=FALSE)
 
+```
+
+We have a total of `r length(unique(paste(validity$id, validity$hypothesis)))`
+
+Here we calculate the proportion of the selected variants that are direct effects, influencing confounders, or reverse causal effects
+
+```{r}
+
 validity_s <- group_by(validity, strategy, nbin) %>%
 	summarise(
 		n=sum(counts), 
@@ -24,19 +48,20 @@ validity_s <- group_by(validity, strategy, nbin) %>%
 	)
 validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
 validity_sl$nbin <- validity_sl$nbin * 50000
+validity_sl <- filter(validity_sl, !grepl("^o", strategy))
 
-ggplot(filter(validity_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
-geom_point(aes(colour=key)) +
-geom_line(aes(colour=key)) +
-facet_grid(. ~ strategy) +
+p1 <- ggplot(filter(validity_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
+geom_point(aes(colour=strategy)) +
+geom_line(aes(colour=strategy)) +
+facet_grid(. ~ key) +
 scale_colour_brewer(type="qual") +
-labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
-theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
-ggsave("../images/steiger_validity_nbin.pdf", width=6, height=6)
+labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="Selection", title="A") +
+theme(legend.position=c(0.8, 0.7), legend.text=element_text(size=8), axis.text.x=element_blank(), axis.title.x=element_blank())
 
 ```
 
-Counts
+Here we get actual counts of the number of variants that are direct effects, influencing confounders, or reverse causal effects. This is averaged across the simulations.
+
 
 ```{r}
 counts_s <- group_by(validity, strategy, nbin) %>%
@@ -48,13 +73,35 @@ counts_s <- group_by(validity, strategy, nbin) %>%
 	)
 counts_sl <- gather(counts_s, key=key, value=value, direct, confounder, reverse)
 counts_sl$nbin <- counts_sl$nbin * 50000
-ggplot(filter(counts_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
-geom_point(aes(colour=key)) +
-geom_line(aes(colour=key)) +
-facet_grid(. ~ strategy) +
+counts_sl <- filter(counts_sl, !grepl("^o", strategy))
+
+p2 <- ggplot(filter(counts_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
+geom_point(aes(colour=strategy)) +
+geom_line(aes(colour=strategy)) +
+facet_grid(. ~ key) +
 scale_colour_brewer(type="qual") +
-labs(x="Instrument discovery sample size", y="Proportion of instruments", colour="SNP\nassociation") +
-theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+labs(x="Instrument discovery sample size", y="Number of retained instruments", colour="Selection", title="B") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5), legend.position="none")
+
+```
+
+```{r}
+grid.arrange(p1, p2)
+```
+
+```{r}
+temp <- inner_join(counts_sl, validity_sl, by=c("strategy", "nbin", "key"))
+
+temp$key <- as.factor(temp$key)
+temp$key <- factor(temp$key, levels=levels(temp$key)[c(2,1,3)])
+
+ggplot(temp, aes(x=value.x, y=value.y)) +
+geom_point(aes(colour=strategy, alpha=nbin)) +
+geom_line(aes(colour=strategy)) +
+facet_grid(key ~ ., scale="free_y") +
+scale_colour_brewer(type="qual") +
+labs(x="Number of retained instruments", y="Proportion of instruments", colour="Selection", alpha="Discovery\nsample size")
+
 ```
 
 Stratify by pleiotropy level of the simulation. Higher values (1-5) indicate higher proportion of validity in the instruments

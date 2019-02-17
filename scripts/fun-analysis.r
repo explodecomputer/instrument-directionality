@@ -1,3 +1,17 @@
+make_resnull <- function(res)
+{
+	bind_rows(
+		filter(res, hypothesis=="x", eff_x.y == 0),
+		filter(res, hypothesis=="y")
+	)	
+}
+
+make_resxy <- function(res)
+{
+	filter(res, hypothesis == "x", eff_x.y != 0)
+
+}
+
 
 simeval <- function(res)
 {
@@ -84,54 +98,6 @@ simeval <- function(res)
 	return(list(p_power=p_power, p_fdr=p_fdr, p_powerfdr=p_powerfdr, p_bias=p_bias))
 
 }
-
-
-# method's -log10 p-value
-
-x <- pROC::roc(rbinom(100, 1, 0.5), rnorm(100))$auc[1]
-
-res$causal <- as.numeric(res$hypothesis == "x" & res$eff_x.y != 0)
-
-rocs <- group_by(res, method, strategy) %>%
-summarise(n=n(), auc=pROC::roc(causal, abs(b/se))$auc[1])
-
-ggplot(rocs %>% filter(!grepl("^o", strategy)), aes(x=method, y=auc)) +
-geom_point(aes(colour=strategy)) +
-theme(axis.text.x=element_text(angle=90)) +
-scale_colour_brewer(type="qual")
-
-
-
-rocs2 <- group_by(subset(res, !is.na(pbin)), method, strategy, nsnpbin, pbin) %>%
-summarise(n=n(), auc=pROC::roc(causal, abs(b/se))$auc[1])
-
-ggplot(rocs2 %>% filter(!grepl("^o", strategy)), aes(x=method,y=auc)) +
-geom_point(aes(colour=strategy)) +
-facet_grid(pbin ~ nsnpbin) +
-theme(axis.text.x=element_text(angle=90)) +
-scale_colour_brewer(type="qual")
-
-
-a <- subset(rocs2, nbin==nbin[1] & pbin2 == pbin2[1])
-
-x <- ungroup(rocs2) %>% 
-filter(!grepl("^o", strategy), !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
-arrange(desc(auc)) %>% 
-slice(1)
-
-y <- ungroup(rocs2) %>% 
-filter(!grepl("^o", strategy), !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
-arrange(desc(auc)) %>% 
-mutate(rank=1:n())
-y[y$rank == 1,] %$% table(method, strategy)
-
-
-
-
-y <- ungroup(rocs2) %>% 
-filter(strategy == "e 1 0", !is.na(nsnpbin)) %>% group_by(nsnpbin, pbin) %>% 
-arrange(desc(auc)) %>% 
-mutate(rank=1:n())
 
 
 
