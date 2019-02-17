@@ -91,9 +91,11 @@ temp <- inner_join(temp, plei, by="id")
 
 summary(lm(nonpl ~ isq, temp))
 
-ggplot(temp, aes(x=nonpl, y=isq)) +
+p1 <- ggplot(temp, aes(x=nonpl, y=isq)) +
 geom_point() +
 geom_smooth()
+p1
+ggsave(p1, file="../images/plei_isq.png")
 
 ```
 
