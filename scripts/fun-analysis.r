@@ -112,10 +112,10 @@ make_optim_dataset <- function(optvec, res, metrics, ncores)
 
 	res$optvec <- optvec
 
-	temp <- subset(res, strategy != "oracle", select=c(optvec, Method, strategy, hypothesis, sim))
-	temp$method <- paste0(temp$Method, " - ", temp$strategy)
+	temp <- subset(res, strategy != "oracle", select=c(optvec, method, strategy, hypothesis, sim))
+	temp$method <- paste0(temp$method, " - ", temp$strategy)
 	# temp$optvec <- abs(temp$Estimate - temp$eff_x.y)
-	temp <- subset(temp, select=-c(Method, strategy))
+	temp <- subset(temp, select=-c(method, strategy))
 
 	sp <- subset(temp, method == method[1], select=c(sim, hypothesis))
 	sp$tt <- runif(1:nrow(sp))

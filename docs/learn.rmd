@@ -9,303 +9,269 @@ date: 15/06/2017
 
 suppressPackageStartupMessages({
 	library(knitr)
-	library(pROC)
 	library(tidyverse)
 	library(ggrepel)
+	library(randomForest)
 })
 opts_chunk$set(cache=FALSE, echo=TRUE, message=FALSE, warning=FALSE)
-```
-
-
-```{r }
-
-library(tidyverse)
+set.seed(100)
 source('../scripts/fun-analysis.r')
 # load("../results/sim3.rdata")
-load("res.rdata")
+
+```
+
+Read in the summary set metrics to be used as predictors for the random forest
+
+```{r}
 load("../results/sim3/agg-info.rdata")
+info$id <- paste0(info$id, info$hypothesis)
+metrics <- subset(info, !steiger_filtered & !outlier_filtered & selection == "e", select=-c(id.exposure, id.outcome, selection, steiger_filtered, outlier_filtered, hypothesis))
 ```
 
-```{r}
+Read in the estimates to serve as the outcomes to validate against predictors
 
-opt1 <- rep(0, nrow(res))
-opt1[res$hypothesis == "xy" & res$eff_x.y != 0 & res$P < 0.001] <- 1
-opt1[res$hypothesis == "yx" & res$P > 0.05] <- 1
-opt1[res$hypothesis == "xy" & res$eff_x.y == 0 & res$P > 0.05] <- 1
-table(opt1)
+```{r }
 
-
-rf2 <- make_optim_dataset(opt1, res, metrics, 14)
-pr2 <- test_predictor(rf2$rf, rf2$sp, res, metrics)
-
-res_rf2 <- add_method(rf2$rf, rf2$sp, res, metrics)
-eval_rf2 <- simeval(res_rf2)
-eval_rf2[[4]]
-
-save(rf2, res_rf2, pr2, eval_rf2, file="../results/rf2.rdata")
-
-
-res_lda1 <- add_method(lda1$rf, lda1$sp, res, metrics)
-eval_lda1 <- simeval(res_lda1)
-eval_lda1[[4]]
-
-
-opt2 <- as.factor(opt1)
-lda1 <- make_optim_dataset2(opt2, res, metrics, 2)
-prlda1 <- test_predictor(lda1$rf, lda1$sp, res, metrics)
-
-save(lda1, eval_lda1, file="../results/lda1.rdata")
-
-x <- lda1$rf
-save(x, file="temp.rdata")
-
-
-
-
-
-
-
-# Make new optim instead of bias - ratio of p(xy) / p(yx)
-
-temp <- filter(as.data.frame(res), eff_x.y != 0, strategy != "oracle") %>%
-	dplyr::select(Method, P, hypothesis, strategy, sim) %>%
-	spread(key=hypothesis, value=P) %>%
-	mutate(xy=-log10(xy), yx=-log10(yx)) %>%
-	as_data_frame
-
-temp$xy[is.infinite(temp$xy)] <- 300
-temp$yx[is.infinite(temp$yx)] <- 300
-temp$rat <- temp$xy / temp$yx
-
-group_by(temp, Method, strategy) %>%
-	summarise(rat=mean(xy / yx)) %>%
-	as.data.frame()
-
-temp2 <- group_by(temp, sim) %>%
-	summarise(meth=paste0(Method, " - ", strategy)[which.max(rat)][1])
-table(temp2$meth)
-
-
+load("res.rdata")
+res <- subset(res, selection == "e")
+res$strategy[res$strategy == "e 0 0"] <- "Tophits"
+res$strategy[res$strategy == "e 1 0"] <- "DF"
+res$strategy[res$strategy == "e 0 1"] <- "HF"
+res$strategy[res$strategy == "e 1 1"] <- "DF + HF"
+res$optvec <- 0
+res$optvec[res$hypothesis == "x" & res$eff_x.y != 0 & res$pval < 0.001] <- 1
+res$optvec[res$hypothesis == "y" & res$pval > 0.05] <- 1
+res$optvec[res$hypothesis == "x" & res$eff_x.y == 0 & res$pval > 0.05] <- 1
 
 ```
 
-
-
-```{r}
-library(tidyverse)
-load("../results/simulate3-methods.rdata")
-load("../results/simulate3.rdata")
-load("../results/rf2.rdata")
-res <- inner_join(res, param, by="sim")
-res$method <- paste0(res$Method, " - ", res$strategy)
-metrics <- metrics[! apply(metrics, 1, function(x) any(is.na(x))), ]
-
-
-
-
-```
-
-
-
-
-
+Setup data for RF
 
 
 ```{r}
 
-# library(DBI)
-# library(RSQLite)
-# library(dbplyr)
-# con <- DBI::dbConnect(RSQLite::SQLite(), "estimates.sqlite")
+methodlist <- unique(x$method)
+names(methodlist) <- methodlist
 
-# copy_to(con, res, "res",
-# 	temporary = FALSE, 
-# 	indexes = list(
-# 		"id", 
-# 		"hypothesis", 
-# 		"strategy",
-# 		"method",
-# 		"selection"
-# 	)
-# )
-
+x <- inner_join(
+		res %>% {data_frame(optvec = .$optvec, method=paste0(.$method, " - ", .$strategy), id = paste0(.$id, .$hypothesis))}, 
+		metrics, 
+		by=c("id")
+	) %>% 
+	dplyr::select(-c(nsnp_removed))
 
 ```
 
+Split data into training and testing
+
+```{r}
+ids <- unique(paste0(res$id, res$hypothesis))
+index <- runif(length(ids)) > 0.333
+train_ids <- ids[index]
+test_ids <- ids[!index]
+
+```
+
+Train random forests
 
 ```{r}
 
-# meth <- data_frame(Method=unique(res$Method))
-# meth$root <- c(rep("Mean", 7), rep("Mode", 4), rep("Median", 3))
-# res <- inner_join(res, meth, by="Method")
+# rf <- mclapply(methodlist, function(m) {
+# 	y <- subset(x, method == m, select=-c(method)) %>%
+# 		dplyr::filter(id %in% train_ids) %>%
+# 		dplyr::select(-c(id))
+# 	return(
+# 		randomForest(
+# 			y = as.factor(y$optvec), 
+# 			x = subset(y, select=-c(optvec)), 
+# 			sampsize=5000,
+# 			ntree=100,
+# 			do.trace=TRUE
+# 		)
+# 	}, mc.cores=22)
 
-# resnull <- bind_rows(
-# 	filter(res, hypothesis=="xy", eff_x.y == 0),
-# 	filter(res, hypothesis=="yx")
-# )
+rf <- list()
 
-# resnull_s_d <- group_by(resnull, Method, strategy, hypothesis) %>%
-# 	summarise(fdr = sum(P < 0.05)/n())
-# levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
-
-# resnull_s <- group_by(resnull, Method, strategy) %>%
-# 	summarise(fdr = sum(P < 0.05)/n())
-
-# resxy <- filter(res, hypothesis == "xy", eff_x.y != 0)
-# resxy$eff_bin <- cut(resxy$eff_x.y, 3)
-
-# resxy_s <- group_by(resxy, Method, strategy, eff_bin) %>%
-# 	summarise(tdr=sum(P < 0.05)/n(), bias=mean(Estimate - eff_x.y), n=n(), bias_se=sd(Estimate - eff_x.y)/sqrt(n))
+for(m in methodlist)
+{
+	y <- subset(x, method == m, select=-c(method)) %>%
+		dplyr::filter(id %in% train_ids) %>%
+		dplyr::select(-c(id))
+	rf[[m]] <- randomForest(
+		y = as.factor(y$optvec), 
+		x = subset(y, select=-c(optvec)), 
+		sampsize=5000,
+		ntree=100,
+		do.trace=TRUE
+	)
+}
 
 
-
-
-
-
-# function to make main plots
-
-
-
-a <- simeval(res)
-a[[1]]
-ggsave("../images/steiger_pow.pdf", width=6, height=3)
-a[[2]]
-ggsave("../images/steiger_fdr.pdf", width=6, height=3)
-a[[3]]
-a[[4]]
+save(rf, file="rf.rdata")
 ```
 
+Test random forests
 
+```{r}
 
+pred <- mclapply(methodlist, function(m) {
+	y <- subset(x, method == m, select=-c(method)) %>%
+		dplyr::filter(id %in% test_ids) %>%
+		dplyr::select(-c(id))
+	p <- predict(rf[[m]], subset(y, select=-c(optvec)), type="prob")[,2]
+	return(
+		data_frame(method=m,
+			auc = pROC::auc(y$optvec, p)[1],
+			rsq = cor(p, y$optvec)^2
+		)
+	)
+	}, mc.cores=14) %>% bind_rows()
 
-
-How does each method perform in terms of finding true positives?
-
-```{r }
-
-
-a[[1]]
-
-# ## ---- Power ----
-
-# temp <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(power=sum(P < 0.01)/n())
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-# ggplot(temp, aes(y=power, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
-
-
-# ggplot(resxy_s, aes(x=eff_bin, y=tdr, group=strategy)) +
-# geom_point(aes(colour=strategy)) +
-# geom_line(aes(colour=strategy)) +
-# facet_wrap(~ Method) +
-# scale_colour_brewer(type="qual") +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5))
-
-
+pred <- separate(pred, method, sep=" - ", c("method", "selection"))
+ggplot(pred, aes(x=method, y=auc, colour=selection, group=selection)) +
+geom_point() +
+theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +
+scale_colour_brewer(type="qual")
 ```
 
+Obtain mixture of experts
 
-False discovery rates of each method
+```{r}
 
-```{r }
+temp <- subset(res, select=c(b, eff_x.y, method, strategy, hypothesis, id))
+temp$method <- paste0(temp$method, " - ", temp$strategy)
+temp$bias <- abs(temp$b - temp$eff_x.y)
+temp <- subset(temp, select=-c(method, strategy, b, eff_x.y))
+temp$id <- paste0(temp$id, temp$hypothesis)
+temp <- subset(temp, select=-c(hypothesis))
 
+met <- subset(metrics, id %in% test_ids, select=-c(nsnp_removed))
+idlist <- met$id
 
-a[[2]]
+d <- mclapply(methodlist, function(m) {
+	predict(rf[[m]], met, type="prob")[,2]
+}) %>% bind_cols
 
-# temp <- resnull_s
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
+sel <- tibble(
+	id=met$id,
+	selmethod = methodlist[apply(d, 1, function(x) which.max(x))]
+)
 
-# ggplot(temp, aes(y=fdr, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
+res$idh <- paste0(res$id, res$hypothesis)
+res2 <- inner_join(res, sel, by=c("idh"="id"))
 
-
-# temp <- resnull_s
-# temp <- inner_join(temp, meth, by="Method")
-# temp <- temp[order(temp$fdr), ]
-# temp$meth2 <- as.factor(paste0(temp$Method, " - ", temp$strategy))
-# temp$meth2 <- factor(temp$meth2, levels=as.character(unique(temp$meth2)))
-
-# ggplot(subset(temp, strategy != "oracle"), aes(x=meth2, y=fdr)) +
-# geom_bar(stat="identity", position="dodge", aes(fill=root, alpha=strategy)) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_fill_brewer(type="qual") +
-# geom_hline(yintercept=0.05, linetype="dotted")
+res3 <- res2 %>%
+	filter(selmethod == paste(method, "-", strategy))
+res3$method <- "MoE - RF"
+res3$strategy <- "Mixed"
+res3 <- bind_rows(res2, res3)
 
 ```
 
-FDR vs Power for each method
+Compare against single experts. 
 
-```{r }
+FDR:
 
-a[[3]]
 
-# library(ggrepel)
+```{r}
+resnull <- 	bind_rows(
+		filter(res3, hypothesis=="x", eff_x.y == 0),
+		filter(res3, hypothesis=="y")
+	)	
+resnull_s_d <- group_by(resnull, method, strategy, hypothesis) %>%
+	summarise(fdr = sum(pval < 0.05)/n())
+levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
+resnull_s <- group_by(resnull, method, strategy) %>%
+	summarise(fdr = sum(pval < 0.05)/n())
+temp <- resnull_s
+p_fdr <- ggplot(temp %>% filter(!grepl("^o", strategy)), aes(y=fdr, x=method)) +
+	geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
+	theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
+	scale_colour_brewer(type="qual") +
+	labs(colour="Instrument\nselection")
+ggsave(p_fdr, file="plot.pdf")
+```
 
-# temp1 <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(power=sum(P < 0.01)/n())
-# temp1 <- inner_join(temp1, meth, by="Method")
-# temp1$Method <- as.factor(temp1$Method)
-# temp1$Method <- factor(temp1$Method, levels=as.character(meth$Method))
+Power:
 
-# temp2 <- resnull_s
-# temp2 <- inner_join(temp2, meth, by="Method")
-# temp2$Method <- as.factor(temp2$Method)
-# temp2$Method <- factor(temp2$Method, levels=as.character(meth$Method))
+```{r}
+resxy <- filter(res3, hypothesis == "x", eff_x.y != 0)
+resxy$eff_bin <- cut(resxy$eff_x.y, 3)
+resxy_s <- group_by(resxy, method, strategy, eff_bin) %>%
+	summarise(tdr=sum(pval < 0.05)/n(), bias=mean(b - eff_x.y), n=n(), bias_se=sd(b - eff_x.y)/sqrt(n))
+temp <- resxy %>%
+	group_by(method, strategy) %>%
+	summarise(power=sum(pval < 0.01)/n())
+p_power <- ggplot(temp %>% filter(!grepl("^o", strategy)), aes(y=power, x=method)) +
+	geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
+	theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
+	scale_colour_brewer(type="qual") +
+	labs(colour="Instrument\nselection")
+ggsave(p_power, file="plot.pdf")
+```
 
-# temp <- merge(temp1, temp2, by=c("Method", "strategy"))
-# temp$meth2 <- paste0(temp$Method, " - ", temp$strategy)
-# ggplot(subset(temp, strategy != "oracle"), aes(x=power, y=fdr)) +
-# geom_point(aes(colour=strategy), size=3) +
-# geom_text_repel(aes(label=Method)) +
-# scale_colour_brewer(type="qual") +
-# labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
+Power vs FDR:
+
+
+```{r}
+temp1 <- resxy %>%
+	group_by(method, strategy) %>%
+	summarise(power=sum(pval < 0.01)/n())
+temp2 <- resnull_s
+temp <- merge(temp1, temp2, by=c("method", "strategy"))
+temp$meth2 <- paste0(temp$method, " - ", temp$strategy)
+p_powerfdr <- ggplot(subset(temp, !grepl("^o", strategy)), aes(x=power, y=fdr)) +
+	geom_point(aes(colour=strategy), size=3) +
+	geom_text_repel(aes(label=method)) +
+	scale_colour_brewer(type="qual") +
+	labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
+ggsave(p_powerfdr, file="plot.pdf")
+```
+
+Bias:
+
+```{r}
+temp <- resxy %>%
+	group_by(method, strategy) %>%
+	summarise(bias=mean(b - eff_x.y), se=sd(b-eff_x.y))
+p_bias <- ggplot(temp %>% filter(!method %in% c("Steiger null", "Wald ratio"), !grepl("^o", strategy)), aes(y=bias, x=method)) +
+	geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
+	geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
+	theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
+	scale_colour_brewer(type="qual") +
+	labs(colour="Instrument\nselection")
+ggsave(p_bias, file="plot.pdf")
 
 ```
 
-How biased is each method for simulations where there is a real causal effect?
+AUC:
 
-```{r }
+```{r}
+library(multidplyr)
+rocs <- res3 %>% filter(selection == "e") %>%
+partition(method, strategy) %>%
+cluster_library("pROC") %>%
+cluster_library("dplyr") %>%
+do({
+        r <- pROC::roc(.$causal, abs(.$b/.$se), ci=TRUE)
+        tibble(
+                n=nrow(.),
+                auc=r$auc[1],
+                ci_lo=r$ci[1],
+                ci_up=r$ci[3]
+        )
+})
 
-a[[4]]
-
-# temp <- resxy %>%
-# 	group_by(Method, strategy) %>%
-# 	summarise(bias=mean(Estimate - eff_x.y), se=sd(Estimate-eff_x.y))
-# temp <- inner_join(temp, meth, by="Method")
-# temp$Method <- as.factor(temp$Method)
-# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
-
-# ggplot(temp, aes(y=bias, x=Method)) +
-# geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
-# geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual") +
-# labs(colour="Instrument\nselection")
+p1 <- ggplot(rocs %>% as_data_frame(), aes(x=method, y=auc, group=strategy, colour=strategy)) +
+geom_point(position=position_dodge(width=0.3)) +
+geom_errorbar(width=0, position=position_dodge(width=0.3), aes(ymin=ci_lo, ymax=ci_up)) +
+theme(axis.text.x=element_text(angle=90)) +
+scale_colour_brewer(type="qual") +
+labs(colour="Selection") +
+theme(axis.text.x=element_text(hjust=1, vjust=0.5))
+ggsave(p1, file="../images/rocs3.pdf")
 
 
-# ggplot(resxy_s, aes(x=eff_bin, y=bias, group=strategy)) +
-# geom_point(aes(colour=strategy)) +
-# geom_errorbar(aes(ymin=bias-bias_se*1.96, ymax=bias+bias_se*1.96, colour=strategy), width=0) +
-# geom_line(aes(colour=strategy)) +
-# facet_wrap(~ Method) +
-# theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
-# scale_colour_brewer(type="qual")
 
 ```
-
-
 
