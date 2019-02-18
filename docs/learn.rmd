@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
 	library(tidyverse)
 	library(ggrepel)
 	library(randomForest)
+	library(parallel)
 })
 opts_chunk$set(cache=FALSE, echo=TRUE, message=FALSE, warning=FALSE)
 set.seed(100)
@@ -50,15 +51,15 @@ Setup data for RF
 
 ```{r}
 
-methodlist <- unique(x$method)
-names(methodlist) <- methodlist
-
 x <- inner_join(
 		res %>% {data_frame(optvec = .$optvec, method=paste0(.$method, " - ", .$strategy), id = paste0(.$id, .$hypothesis))}, 
 		metrics, 
 		by=c("id")
 	) %>% 
 	dplyr::select(-c(nsnp_removed))
+
+methodlist <- unique(x$method)
+names(methodlist) <- methodlist
 
 ```
 
@@ -76,35 +77,37 @@ Train random forests
 
 ```{r}
 
-# rf <- mclapply(methodlist, function(m) {
-# 	y <- subset(x, method == m, select=-c(method)) %>%
-# 		dplyr::filter(id %in% train_ids) %>%
-# 		dplyr::select(-c(id))
-# 	return(
-# 		randomForest(
-# 			y = as.factor(y$optvec), 
-# 			x = subset(y, select=-c(optvec)), 
-# 			sampsize=5000,
-# 			ntree=100,
-# 			do.trace=TRUE
-# 		)
-# 	}, mc.cores=22)
-
-rf <- list()
-
-for(m in methodlist)
-{
+rf <- mclapply(methodlist, function(m) {
 	y <- subset(x, method == m, select=-c(method)) %>%
 		dplyr::filter(id %in% train_ids) %>%
 		dplyr::select(-c(id))
-	rf[[m]] <- randomForest(
-		y = as.factor(y$optvec), 
-		x = subset(y, select=-c(optvec)), 
-		sampsize=5000,
-		ntree=100,
-		do.trace=TRUE
+	return(
+		randomForest(
+			y = as.factor(y$optvec), 
+			x = subset(y, select=-c(optvec)), 
+			sampsize=5000,
+			ntree=100,
+			do.trace=TRUE
+		)
 	)
-}
+	}, mc.cores=22)
+
+stopifnot(all(!sapply(rf, is.null)))
+# rf <- list()
+
+# for(m in methodlist)
+# {
+# 	y <- subset(x, method == m, select=-c(method)) %>%
+# 		dplyr::filter(id %in% train_ids) %>%
+# 		dplyr::select(-c(id))
+# 	rf[[m]] <- randomForest(
+# 		y = as.factor(y$optvec), 
+# 		x = subset(y, select=-c(optvec)), 
+# 		sampsize=5000,
+# 		ntree=100,
+# 		do.trace=TRUE
+# 	)
+# }
 
 
 save(rf, file="rf.rdata")
