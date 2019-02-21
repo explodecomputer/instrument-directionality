@@ -35,10 +35,10 @@ Then the following tests were performed
 
 ```{r }
 library(tidyverse)
-load("../results/simulate3.rdata")
+load("../results/sim3.rdata")
 
-res <- inner_join(res, param, by="sim")
-validity <- inner_join(validity, param, by="sim")
+estimates <- inner_join(estimates, param, by="id")
+instrument_validity <- inner_join(instrument_validity, param, by="id")
 
 # meth <- data_frame(Method=unique(res$Method))
 # meth$root <- c(rep("Mean", 7), rep("Mode", 4), rep("Median", 3))
@@ -77,34 +77,36 @@ simeval <- function(res)
 	require(tidyverse)
 	require(ggrepel)
 
+	res$strategy <- paste(res$selection, as.numeric(res$steiger_filtered), as.numeric(res$outlier_filtered))
+
 	# Organise data
 	resnull <- bind_rows(
-		filter(res, hypothesis=="xy", eff_x.y == 0),
-		filter(res, hypothesis=="yx")
+		filter(res, hypothesis=="x", eff_x.y == 0),
+		filter(res, hypothesis=="y")
 	)
-	resnull_s_d <- group_by(resnull, Method, strategy, hypothesis) %>%
-		summarise(fdr = sum(P < 0.05)/n())
+	resnull_s_d <- group_by(resnull, method, strategy, hypothesis) %>%
+		summarise(fdr = sum(pval < 0.05)/n())
 	levels(resnull_s_d$hypothesis) <- c("No causal effect", "Reverse cause")
 
-	resnull_s <- group_by(resnull, Method, strategy) %>%
-		summarise(fdr = sum(P < 0.05)/n())
+	resnull_s <- group_by(resnull, method, strategy) %>%
+		summarise(fdr = sum(pval < 0.05)/n())
 
-	resxy <- filter(res, hypothesis == "xy", eff_x.y != 0)
+	resxy <- filter(res, hypothesis == "x", eff_x.y != 0)
 	resxy$eff_bin <- cut(resxy$eff_x.y, 3)
 
-	resxy_s <- group_by(resxy, Method, strategy, eff_bin) %>%
-		summarise(tdr=sum(P < 0.05)/n(), bias=mean(Estimate - eff_x.y), n=n(), bias_se=sd(Estimate - eff_x.y)/sqrt(n))
+	resxy_s <- group_by(resxy, method, strategy, eff_bin) %>%
+		summarise(tdr=sum(pval < 0.05)/n(), bias=mean(b - eff_x.y), n=n(), bias_se=sd(b - eff_x.y)/sqrt(n))
 
 
 
 	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
+		group_by(method, strategy) %>%
+		summarise(power=sum(pval < 0.01)/n())
 	# temp <- inner_join(temp, meth, by="Method")
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_power <- ggplot(temp, aes(y=power, x=Method)) +
+	p_power <- ggplot(temp, aes(y=power, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
 		scale_colour_brewer(type="qual") +
@@ -117,7 +119,7 @@ simeval <- function(res)
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_fdr <- ggplot(temp, aes(y=fdr, x=Method)) +
+	p_fdr <- ggplot(temp, aes(y=fdr, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
 		scale_colour_brewer(type="qual") +
@@ -125,8 +127,8 @@ simeval <- function(res)
 
 
 	temp1 <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(power=sum(P < 0.01)/n())
+		group_by(method, strategy) %>%
+		summarise(power=sum(pval < 0.01)/n())
 	# temp1 <- inner_join(temp1, meth, by="Method")
 	# temp1$Method <- as.factor(temp1$Method)
 	# temp1$Method <- factor(temp1$Method, levels=as.character(meth$Method))
@@ -136,24 +138,22 @@ simeval <- function(res)
 	# temp2$Method <- as.factor(temp2$Method)
 	# temp2$Method <- factor(temp2$Method, levels=as.character(meth$Method))
 
-	temp <- merge(temp1, temp2, by=c("Method", "strategy"))
-	temp$meth2 <- paste0(temp$Method, " - ", temp$strategy)
-	p_powerfdr <- ggplot(subset(temp, strategy != "oracle"), aes(x=power, y=fdr)) +
+	temp <- merge(temp1, temp2, by=c("method", "strategy"))
+	temp$meth2 <- paste0(temp$method, " - ", temp$strategy)
+	p_powerfdr <- ggplot(subset(temp, strategy != "o"), aes(x=power, y=fdr)) +
 		geom_point(aes(colour=strategy), size=3) +
-		geom_text_repel(aes(label=Method)) +
+		geom_text_repel(aes(label=method)) +
 		scale_colour_brewer(type="qual") +
 		labs(x="Power (higher is better)", y="FDR (lower is better)", colour="Instrument\nselection")
 
-
-
 	temp <- resxy %>%
-		group_by(Method, strategy) %>%
-		summarise(bias=mean(Estimate - eff_x.y), se=sd(Estimate-eff_x.y))
+		group_by(method, strategy) %>%
+		summarise(bias=mean(b - eff_x.y), se=sd(b-eff_x.y))
 	# temp <- inner_join(temp, meth, by="Method")
 	# temp$Method <- as.factor(temp$Method)
 	# temp$Method <- factor(temp$Method, levels=as.character(meth$Method))
 
-	p_bias <- ggplot(temp, aes(y=bias, x=Method)) +
+	p_bias <- ggplot(temp, aes(y=bias, x=method)) +
 		geom_point(position=position_dodge(width=0.3), aes(colour=strategy), size=3) +
 		geom_errorbar(position=position_dodge(width=0.3), aes(ymin=bias-se, ymax=bias+se, colour=strategy), width=0) +
 		theme(axis.text.x=element_text(angle=90, hjust=0.5, vjust=0.5)) +
@@ -180,33 +180,43 @@ Is Steiger finding better instruments?
 
 ```{r }
 
+validity <- instrument_validity
+validity$strategy <- paste(validity$selection, validity$measure)
+
+
 validity$n <- validity$nidx
-validity$n[validity$hypothesis == "yx"] <- validity$nidy[validity$hypothesis == "yx"]
+validity$n[validity$hypothesis == "y"] <- validity$nidy[validity$hypothesis == "y"]
+validity$type2 <- "valid"
+validity$type2[validity$hypothesis == "x" & validity$type == "y"] <- "reverse"
+validity$type2[validity$hypothesis == "y" & validity$type == "x"] <- "reverse"
+validity$type2[validity$type == "u"] <- "confounder"
+
+
 
 validity$nbin <- cut(validity$n, breaks=10, labels=FALSE)
 
 validity_s <- group_by(validity, strategy, nbin) %>%
 	summarise(
-		n=sum(value), 
-		direct=sum(value[type=="valid"])/n,
-		confounder=sum(value[type=="confounder"])/n,
-		reverse=sum(value[type=="reverse"])/n
+		n=sum(counts), 
+		direct=sum(counts[type2=="valid"])/n,
+		confounder=sum(counts[type2=="confounder"])/n,
+		reverse=sum(counts[type2=="reverse"])/n
 	)
 validity_sl <- gather(validity_s, key=key, value=value, direct, confounder, reverse)
 save(validity_sl, file="validity.rdata")
 
-ggplot(filter(validity_sl, strategy != "oracle"), aes(x=strategy, y=value)) +
+ggplot(filter(validity_sl, !grepl("^o", strategy)), aes(x=strategy, y=value)) +
 geom_bar(stat="identity", position="dodge", aes(fill=key)) +
 scale_fill_brewer(type='qual') +
 labs(y="Proportion of instruments", fill="SNP association") +
 geom_text(aes(y=value+0.04, label=round(value, 2), fill=key), position=position_dodge(width=0.9)) +
 theme(axis.text.y=element_blank(), axis.ticks=element_blank())
 ggsave("../images/steiger_validity.pdf", width=6, height=6)
-```
+
 
 validity_sl$nbin <- validity_sl$nbin * 50000
 
-ggplot(filter(validity_sl, strategy != "oracle"), aes(x=nbin, y=value)) +
+ggplot(filter(validity_sl, !grepl("^o", strategy)), aes(x=nbin, y=value)) +
 geom_point(aes(colour=key)) +
 geom_line(aes(colour=key)) +
 facet_grid(. ~ strategy) +
@@ -216,6 +226,7 @@ theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
 ggsave("../images/steiger_validity_nbin.pdf", width=6, height=6)
 
 
+```
 
 
 

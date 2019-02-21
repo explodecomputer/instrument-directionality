@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=sims
-#SBATCH --array=1001-1306
-#SBATCH --nodes=1 --cpus-per-task=1 --time=0-12:00:00
+#SBATCH --array=1001-2000
+#SBATCH --nodes=1 --cpus-per-task=1 --time=0-6:00:00
 #SBATCH --partition=mrcieu
 #SBATCH --output=job_reports/slurm-%A_%a.out
 #SBATCH --mem=12G
@@ -24,8 +24,8 @@ cd ${HOME}/mr-eve/instrument-directionality/scripts
 
 time Rscript \
 	sim-metrics.r \
-	../results/sim3/simulate3_${i}.rdata \
-	../results/sim3/simulate3_${i}-metrics.rdata \
+	../results/sim3/sim_${i}.rdata \
+	../results/sim3/sim_${i}.rdata \
 	${i}
 
 date
