@@ -155,8 +155,6 @@ save(plei_summary, file=file.path(input_dir, "agg-plei_summary.rdata"))
 
 
 
-
-
 subset(estimates, selection != "oracle") %>% group_by(steiger_filtered, outlier_filtered) %>% summarise(ncorrect=sum(beta_correct, na.rm=T), n=n())
 
 subset(estimates, selection != "oracle") %>% group_by(steiger_filtered, outlier_filtered) %>% summarise(ncorrect=sum(beta_best, na.rm=T), n=n())
